@@ -13,3 +13,21 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# DinoPlayer local/build artifacts
+.idea/
+**/build/
+.gradle/
+tools/model-source/
+classes.jar
+javap_model.txt
+*.apk
+*.aab
+*.jks
+*.keystore
+.env
+.env.*
+!*.example
+app/libs/sherpa-onnx-*.aar
+
+app/libs/sherpa-onnx-*.aar.download

@@ -229,16 +229,19 @@ class SubtitleUtils {
     public static Uri convertToUTF(Context context, Uri subtitleUri) {
         try {
             final CharsetDetector detector = new CharsetDetector();
-            final BufferedInputStream bufferedInputStream = new BufferedInputStream(context.getContentResolver().openInputStream(subtitleUri));
-            detector.setText(bufferedInputStream);
-            final CharsetMatch charsetMatch = detector.detect();
+            final CharsetMatch charsetMatch;
+            try (BufferedInputStream bufferedInputStream = new BufferedInputStream(context.getContentResolver().openInputStream(subtitleUri))) {
+                detector.setText(bufferedInputStream);
+                charsetMatch = detector.detect();
+            }
+            if (charsetMatch == null) return subtitleUri;
 
             if (!StandardCharsets.UTF_8.displayName().equals(charsetMatch.getName())) {
                 String filename = subtitleUri.getPath();
                 filename = filename.substring(filename.lastIndexOf("/") + 1);
                 final File file = new File(context.getCacheDir(), filename);
                 try (FileOutputStream stream = new FileOutputStream(file)) {
-                    stream.write(charsetMatch.getString().getBytes());
+                    stream.write(charsetMatch.getString().getBytes(StandardCharsets.UTF_8));
                     subtitleUri = Uri.fromFile(file);
                 } catch (IOException e) {
                     e.printStackTrace();

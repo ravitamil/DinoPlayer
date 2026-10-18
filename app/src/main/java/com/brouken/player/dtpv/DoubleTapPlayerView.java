@@ -128,6 +128,9 @@ public class DoubleTapPlayerView extends CustomStyledPlayerView {
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
+        if (isLocked || isTapAndHoldActive()) {
+            return super.onTouchEvent(ev);
+        }
         if (isDoubleTapEnabled) {
             boolean consumed = gestureDetector.onTouchEvent(ev);
 
@@ -139,6 +142,12 @@ public class DoubleTapPlayerView extends CustomStyledPlayerView {
             return true;
         }
         return super.onTouchEvent(ev);
+    }
+
+    @Override
+    protected boolean shouldHandleSingleTapUp() {
+        // The double-tap detector confirms a single tap later. Never toggle twice for one tap.
+        return !isDoubleTapEnabled;
     }
 
     @Override
@@ -254,7 +263,7 @@ public class DoubleTapPlayerView extends CustomStyledPlayerView {
             // Return true needed because this method is also called if you tap e.g. three times
             // in a row, therefore the controller would appear since the original behavior is
             // to hide and show on single tap
-            if (isDoubleTapping)
+            if (isDoubleTapping || rootView.isTapAndHoldActive())
                 return true;
             if (DEBUG)
                 Log.d(TAG, "onSingleTapConfirmed: isDoubleTap = false");

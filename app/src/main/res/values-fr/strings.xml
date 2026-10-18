@@ -9,6 +9,6 @@
     <string name="video_orientation_video">Orientation vidéo</string>
     <string name="video_resize_crop">Rogner</string>
     <string name="video_resize_fit">Ajuster</string>
-    <string name="app_name">Juste Lecteur</string>
+    <string name="app_name">DinoPlayer</string>
     <string name="request_scope">Pour charger automatiquement les sous-titres externes, accordez %s l’accès au dossier le plus haut contenant vos vidéos (par exemple : Films).</string>
 </resources>

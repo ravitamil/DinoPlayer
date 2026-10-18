@@ -2,7 +2,16 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
-    <color name="green">#3DDC84</color>
+    <color name="green">@color/player_accent</color>
+    <color name="player_accent">#8CD96B</color>
+    <color name="player_accent_soft">#298CD96B</color>
+    <color name="app_background">#0A0A0A</color>
+    <color name="app_surface">#1C1C1C</color>
+    <color name="app_surface_raised">#2B2B2B</color>
+    <color name="app_border">#343434</color>
+    <color name="app_text">#F5F3F1</color>
+    <color name="app_text_secondary">#AAAAAA</color>
+    <color name="app_text_muted">#818181</color>
 
     <color name="ui_controls_background">#98000000</color>
     <color name="exo_bottom_bar_background">@color/ui_controls_background</color>

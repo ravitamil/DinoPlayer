@@ -1,37 +1,45 @@
-name: CI
-
+name: Android checks
 on:
-  workflow_dispatch:
-  pull_request:
-    branches:
-      - dev
-      - master
-    paths-ignore:
-      - 'README.md'
-      - 'fastlane/**'
   push:
-    branches:
-      - dev
-      - master
-    paths-ignore:
-      - 'README.md'
-      - 'fastlane/**'
-
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
-
     runs-on: ubuntu-latest
-
+    timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v3
-    - name: set up JDK 11
-      uses: actions/setup-java@v3
-      with:
-        java-version: '11'
-        distribution: 'temurin'
-        cache: gradle
-
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
-    - name: Build with Gradle
-      run: ./gradlew build
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-30' 'build-tools;30.0.2'
+      - name: Verify pinned offline runtime
+        run: python tools/bootstrap_runtime.py
+      - name: Build, test and lint
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug --no-daemon --max-workers=1
+      - name: Verify APK contains no full speech models
+        run: |
+          python -c "import glob,zipfile; p=glob.glob('app/build/outputs/apk/debug/*.apk')[0]; z=zipfile.ZipFile(p); assert z.testzip() is None; assert not any(n.endswith('.onnx') for n in z.namelist())"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: dinoplayer-debug-and-reports
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.*
+          retention-days: 14

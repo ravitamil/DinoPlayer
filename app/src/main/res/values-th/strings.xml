@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Just Player</string>
+    <string name="app_name">DinoPlayer</string>
     <string name="error_files_missing">แอพไฟล์ถูกปิดใช้งานหรือหายไป</string>
     <string name="error_details">รายละเอียด</string>
     <string name="open_subtitles">โหลดคำบรรยาย</string>

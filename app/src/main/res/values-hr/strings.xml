@@ -10,5 +10,5 @@
     <string name="video_orientation_video">Položaj videa</string>
     <string name="video_resize_crop">Obreži</string>
     <string name="video_resize_fit">Prilagodi</string>
-    <string name="app_name">Samo Player</string>
+    <string name="app_name">DinoPlayer</string>
 </resources>

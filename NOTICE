@@ -1,0 +1,5 @@
+DinoPlayer is derived from Just (Video) Player by Marcel Dopita (moneytoo/Player), using the whistlingwoods/JustPlayer checkout and its preserved commit history.
+
+DinoPlayer-specific changes: Ravikumar Tamilmani, 2026. AI-assisted implementation and verification.
+
+The original Unlicense is retained. Third-party components keep their own licences; see THIRD_PARTY_NOTICES.md and LICENSES/.

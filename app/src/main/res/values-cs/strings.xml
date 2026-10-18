@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Prostě přehrávač</string>
+    <string name="app_name">DinoPlayer</string>
 
     <string name="video_resize_fit">Přizpůsobení</string>
     <string name="video_resize_crop">Oříznutí</string>

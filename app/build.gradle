@@ -7,12 +7,12 @@ android {
     ndkVersion '21.4.7075529'
 
     defaultConfig {
-        applicationId "com.soulwin.player"
+        applicationId "app.dino.player"
         minSdkVersion 21
         targetSdkVersion 30
-        versionCode 38
-        versionName "0.38"
-        archivesBaseName = "Jass.Player.v${versionName}"
+        versionCode 43
+        versionName "0.43"
+        archivesBaseName = "DinoPlayer.v${versionName}"
     }
 
     buildTypes {
@@ -28,9 +28,16 @@ android {
     lintOptions {
         disable 'MissingTranslation'
     }
+    aaptOptions {
+        noCompress 'onnx'
+    }
+    sourceSets {
+        main.assets.exclude 'sherpa/**'
+    }
 }
 
 dependencies {
+    testImplementation 'junit:junit:4.13.2'
     def exoplayerVersion = '2.14.1'
     implementation "com.google.android.exoplayer:exoplayer-core:$exoplayerVersion"
     implementation "com.google.android.exoplayer:exoplayer-ui:$exoplayerVersion"
@@ -42,9 +49,11 @@ dependencies {
     implementation 'com.getkeepsafe.taptargetview:taptargetview:1.13.2'
     implementation 'com.google.android.material:material:1.3.0'
     implementation 'androidx.coordinatorlayout:coordinatorlayout:1.1.0'
+    implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'
     implementation 'com.ibm.icu:icu4j:69.1'
-    implementation 'com.arthenica:ffmpeg-kit-min:4.4.LTS'
+    implementation 'io.github.maitrungduc1410:ffmpeg-kit-min:6.0.0'
     implementation 'com.github.hedzr:android-file-chooser:v1.2.0-final'
     implementation project(path: ':doubletapplayerview')
     implementation fileTree(dir: "libs", include: ["*.aar"])
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:1.8.22"
 }

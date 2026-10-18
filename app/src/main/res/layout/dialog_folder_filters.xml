@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="20dp"
+    android:paddingEnd="20dp"
+    android:paddingTop="16dp"
+    android:paddingBottom="8dp">
+
+    <RadioGroup
+        android:id="@+id/radio_group_filter_mode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/radio_scan_all"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/scan_all_folders"
+            android:textColor="@color/white"
+            android:textSize="14sp"
+            android:buttonTint="@color/green" />
+
+        <RadioButton
+            android:id="@+id/radio_scan_included"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/scan_only_included"
+            android:textColor="@color/white"
+            android:textSize="14sp"
+            android:buttonTint="@color/green" />
+
+    </RadioGroup>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="10dp"
+        android:background="@color/app_border" />
+
+    <CheckBox
+        android:id="@+id/check_filter_show_hidden"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/show_hidden_folders"
+        android:textColor="@color/white"
+        android:textSize="14sp"
+        android:buttonTint="@color/green" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="10dp"
+        android:background="@color/app_border" />
+
+    <TextView
+        android:id="@+id/text_filter_section_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textColor="@color/green"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:text="Select folders to exclude from scan:" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/recycler_filter_folders"
+        android:layout_width="match_parent"
+        android:layout_height="240dp"
+        android:layout_marginTop="8dp"
+        android:scrollbars="vertical" />
+
+</LinearLayout>

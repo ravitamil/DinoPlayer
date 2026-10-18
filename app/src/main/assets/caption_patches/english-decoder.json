@@ -1,0 +1,9 @@
+{
+  "source_sha256": "06c0e6ff6348d427e51839219d1c886c18cfdf411e629e33f5e1679bff9c1527",
+  "target_sha256": "09e547cbcfe69b9f8ca7e4df4ac9d5b20e08af923537b77efd5ce895764c25d5",
+  "source_start": 1041254,
+  "source_end": 89757365,
+  "target_size": 89854537,
+  "head_bytes": 1041677,
+  "tail_bytes": 96749
+}

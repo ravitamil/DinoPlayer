@@ -20,6 +20,7 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Color;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.graphics.drawable.Icon;
 import android.media.AudioManager;
@@ -33,12 +34,17 @@ import android.provider.DocumentsContract;
 import android.provider.Settings;
 import android.support.v4.media.MediaMetadataCompat;
 import android.support.v4.media.session.MediaSessionCompat;
+import android.text.Editable;
 import android.text.TextUtils;
+import android.text.TextWatcher;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.Rational;
 import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
+import android.view.OrientationEventListener;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -88,7 +94,6 @@ import com.google.android.material.snackbar.Snackbar;
 
 import java.io.File;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -122,7 +127,15 @@ public class PlayerActivity extends Activity {
     private static final int REQUEST_CHOOSER_VIDEO = 1;
     private static final int REQUEST_CHOOSER_SUBTITLE = 2;
     private static final int REQUEST_CHOOSER_SCOPE_DIR = 10;
-    public static final int CONTROLLER_TIMEOUT = 3500;
+    public static final int CONTROLLER_TIMEOUT = 5000;
+    private final Runnable watchCheckpoint = new Runnable() {
+        @Override public void run() {
+            if (player != null && player.isPlaying()) {
+                saveWatchHistory();
+                playerView.postDelayed(this, 15000);
+            }
+        }
+    };
     private static final String ACTION_MEDIA_CONTROL = "media_control";
     private static final String EXTRA_CONTROL_TYPE = "control_type";
     private static final int REQUEST_PLAY = 1;
@@ -135,6 +148,16 @@ public class PlayerActivity extends Activity {
     private ImageButton buttonOpen;
     private ImageButton buttonPiP;
     private ImageButton buttonAspectRatio;
+    private ImageButton buttonSubtitle;
+    private ImageButton buttonLock;
+    private ImageButton buttonUnlock;
+    private ImageButton exoPrev;
+    private ImageButton exoNext;
+    private TextView durationView;
+    private boolean mShowRemainingTime = false;
+    private final Runnable mHideUnlockRunnable = () -> {
+        if (buttonUnlock != null) buttonUnlock.setVisibility(View.GONE);
+    };
     private ImageButton exoPlayPause;
     private ProgressBar loadingProgressBar;
     private StyledPlayerControlView controlView;
@@ -142,7 +165,10 @@ public class PlayerActivity extends Activity {
     private boolean restoreOrientationLock;
     private boolean restorePlayState;
     private boolean play;
-    private float subtitlesScale;
+    private final com.google.android.exoplayer2.text.TextOutput consistentSubtitleOutput=cues -> {
+        SubtitleView view=playerView.getSubtitleView();
+        if(view!=null)view.setCues(SubtitleAppearance.normalize(cues));
+    };
     private boolean isScrubbing;
     private boolean scrubbingNoticeable;
     private long scrubbingStart;
@@ -152,15 +178,59 @@ public class PlayerActivity extends Activity {
     private Uri nextUri;
     public static boolean restoreControllerTimeout = false;
     public static boolean shortControllerTimeout = false;
+    private OrientationEventListener orientationEventListener;
+    private String mVideoPath = null;
+    private LiveSubtitleController liveSubtitles;
+    private boolean manualOrientation;
 
     final Rational rationalLimitWide = new Rational(239, 100);
     final Rational rationalLimitTall = new Rational(100, 239);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        PlaylistManager.restore(this);
         // Rotate ASAP, before super/inflating to avoid glitches with activity launch animation
         mPrefs = new Prefs(this);
         Utils.setOrientation(this, mPrefs.orientation);
+
+        orientationEventListener = new OrientationEventListener(this) {
+            @Override
+            public void onOrientationChanged(int orientation) {
+                if (orientation == ORIENTATION_UNKNOWN || player == null)
+                    return;
+                if (manualOrientation || mPrefs.orientation != Utils.Orientation.VIDEO)
+                    return;
+                if (Utils.isAutoRotateOn(PlayerActivity.this))
+                    return;
+
+                final Format format = player.getVideoFormat();
+                if (format == null)
+                    return;
+
+                boolean isPortrait = Utils.isPortrait(format);
+                if (!isPortrait) {
+                    if (orientation >= 225 && orientation <= 315) {
+                        if (getRequestedOrientation() != ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+                            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                        }
+                    } else if (orientation >= 45 && orientation <= 135) {
+                        if (getRequestedOrientation() != ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE) {
+                            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE);
+                        }
+                    }
+                } else {
+                    if ((orientation >= 315 && orientation <= 360) || (orientation >= 0 && orientation <= 45)) {
+                        if (getRequestedOrientation() != ActivityInfo.SCREEN_ORIENTATION_PORTRAIT) {
+                            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                        }
+                    } else if (orientation >= 135 && orientation <= 225) {
+                        if (getRequestedOrientation() != ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
+                            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT);
+                        }
+                    }
+                }
+            }
+        };
 
         super.onCreate(savedInstanceState);
         if (Build.VERSION.SDK_INT == 28 && Build.MANUFACTURER.toLowerCase().equals("xiaomi") && Build.DEVICE.toLowerCase().equals("oneday")) {
@@ -170,6 +240,10 @@ public class PlayerActivity extends Activity {
         }
 
         if (getIntent().getData() != null) {
+            mVideoPath = getIntent().getStringExtra("video_path");
+            if (mVideoPath == null) {
+                mVideoPath = SubtitleGenerator.resolveRealPath(this, getIntent().getData());
+            }
             mPrefs.updateMedia(this, getIntent().getData(), getIntent().getType());
             searchSubtitles();
 			focusPlay = true;
@@ -178,11 +252,12 @@ public class PlayerActivity extends Activity {
         coordinatorLayout = findViewById(R.id.coordinatorLayout);
         mAudioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         playerView = findViewById(R.id.video_view);
+        liveSubtitles = new LiveSubtitleController(this, playerView, () -> player);
         exoPlayPause = findViewById(R.id.exo_play_pause);
         loadingProgressBar = findViewById(R.id.loading);
 
-        playerView.setShowNextButton(false);
-        playerView.setShowPreviousButton(false);
+        playerView.setShowNextButton(true);
+        playerView.setShowPreviousButton(true);
         playerView.setShowFastForwardButton(false);
         playerView.setShowRewindButton(false);
 
@@ -231,82 +306,180 @@ public class PlayerActivity extends Activity {
             }
         });
 
-        buttonOpen = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonOpen.setImageResource(R.drawable.ic_folder_open_24dp);
-        buttonOpen.setId(View.generateViewId());
-
-        buttonOpen.setOnClickListener(view -> openFile(mPrefs.mediaUri));
-
-        buttonOpen.setOnLongClickListener(view -> {
-            if (!Utils.isTvBox(this) && mPrefs.askScope) {
-                askForScope(true, false);
-            } else {
-                loadSubtitleFile(mPrefs.mediaUri);
-            }
-            return true;
-        });
-
-        if (isPiPSupported()) {
-            // TODO: Android 12 improvements:
-            // https://developer.android.com/about/versions/12/features/pip-improvements
-            mPictureInPictureParamsBuilder = new PictureInPictureParams.Builder();
-            updatePictureInPictureActions(R.drawable.ic_play_arrow_24dp, "Play", CONTROL_TYPE_PLAY, REQUEST_PLAY);
-
-            buttonPiP = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-            buttonPiP.setImageResource(R.drawable.ic_picture_in_picture_alt_24dp);
-
-            buttonPiP.setOnClickListener(view -> {
-                enterPiP();
+        buttonOpen = findViewById(R.id.button_open);
+        if (buttonOpen != null) {
+            buttonOpen.setOnClickListener(view -> {
+                returnToLibrary();
             });
-
-            buttonPiP.setOnLongClickListener(v -> {
-                buttonPiP.performHapticFeedback(mPrefs.toggleAutoPiP() ?
-                        HapticFeedbackConstants.VIRTUAL_KEY : HapticFeedbackConstants.LONG_PRESS);
-                resetHideCallbacks();
+            buttonOpen.setOnLongClickListener(view -> {
+                openFile(mPrefs.mediaUri);
                 return true;
             });
-
-            Utils.setButtonEnabled(this, buttonPiP, false);
         }
 
-        buttonAspectRatio = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonAspectRatio.setImageResource(R.drawable.ic_aspect_ratio_24dp);
-        buttonAspectRatio.setOnClickListener(view -> {
-            playerView.setScale(1.f);
-            if (playerView.getResizeMode() == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
-                Utils.showText(playerView, getString(R.string.video_resize_crop));
-            } else {
-                // Default mode
-                playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
-                Utils.showText(playerView, getString(R.string.video_resize_fit));
+        buttonPiP = findViewById(R.id.button_pip);
+        if (isPiPSupported()) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                mPictureInPictureParamsBuilder = new PictureInPictureParams.Builder();
+                updatePiPParams();
+                updatePictureInPictureActions(R.drawable.ic_play_arrow_24dp, "Play", CONTROL_TYPE_PLAY, REQUEST_PLAY);
             }
-            resetHideCallbacks();
-        });
-        Utils.setButtonEnabled(this, buttonAspectRatio, false);
 
-        ImageButton buttonRotation = new ImageButton(this, null, 0, R.style.ExoStyledControls_Button_Bottom);
-        buttonRotation.setImageResource(R.drawable.ic_auto_rotate_24dp);
-        buttonRotation.setOnClickListener(view -> {
-            mPrefs.orientation = Utils.getNextOrientation(mPrefs.orientation);
-            Utils.setOrientation(PlayerActivity.this, mPrefs.orientation);
-            Utils.showText(playerView, getString(mPrefs.orientation.description), 2500);
-            resetHideCallbacks();
+            if (buttonPiP != null) {
+                buttonPiP.setVisibility(View.VISIBLE);
+                buttonPiP.setOnClickListener(view -> enterPiP());
+                buttonPiP.setOnLongClickListener(v -> {
+                    buttonPiP.performHapticFeedback(mPrefs.toggleAutoPiP() ?
+                            HapticFeedbackConstants.VIRTUAL_KEY : HapticFeedbackConstants.LONG_PRESS);
+                    resetHideCallbacks();
+                    return true;
+                });
+                Utils.setButtonEnabled(this, buttonPiP, false);
+            }
+        } else if (buttonPiP != null) {
+            buttonPiP.setVisibility(View.GONE);
+        }
+
+        buttonAspectRatio = findViewById(R.id.button_aspect_ratio);
+        if (buttonAspectRatio != null) {
+            buttonAspectRatio.setOnClickListener(view -> {
+                playerView.setScale(1.f);
+                if (playerView.getResizeMode() == AspectRatioFrameLayout.RESIZE_MODE_FIT) {
+                    playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_ZOOM);
+                    Utils.showText(playerView, getString(R.string.video_resize_crop));
+                } else {
+                    playerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                    Utils.showText(playerView, getString(R.string.video_resize_fit));
+                }
+                resetHideCallbacks();
+            });
+            Utils.setButtonEnabled(this, buttonAspectRatio, false);
+        }
+
+        findViewById(R.id.button_cancel_captions).setOnClickListener(v -> { liveSubtitles.stopGeneration();updateCaptionCancel(); });
+        buttonSubtitle = findViewById(R.id.button_subtitle);
+        if (buttonSubtitle != null) {
+            buttonSubtitle.setOnClickListener(view -> showSubtitleOptions());
+            buttonSubtitle.setOnLongClickListener(view -> {
+                if (getTrackCountSubtitle() > 0) {
+                    showSubtitleTracksDialog();
+                } else {
+                    forceGenerateSubtitles();
+                }
+                return true;
+            });
+            updateSubtitleButtonState(mPrefs.subtitleTrack >= 0 || mPrefs.subtitleUri != null);
+        }
+
+        buttonLock = findViewById(R.id.button_lock);
+        // Unlock belongs to the overlay, outside the controller that locking hides.
+        buttonUnlock = new ImageButton(this);
+        buttonUnlock.setImageResource(R.drawable.ic_lock_24dp);
+        buttonUnlock.setColorFilter(Color.WHITE);
+        buttonUnlock.setBackgroundResource(R.drawable.rounded_duration_background);
+        buttonUnlock.setContentDescription(getString(R.string.unlock_screen));
+        FrameLayout.LayoutParams unlockParams = new FrameLayout.LayoutParams(Utils.dpToPx(56), Utils.dpToPx(56), Gravity.BOTTOM | Gravity.START);
+        unlockParams.leftMargin = Utils.dpToPx(24);
+        unlockParams.bottomMargin = Utils.dpToPx(40);
+        playerView.getOverlayFrameLayout().addView(buttonUnlock, unlockParams);
+        buttonUnlock.setVisibility(View.GONE);
+        if (buttonLock != null && buttonUnlock != null) {
+            buttonLock.setOnClickListener(v -> {
+                playerView.isLocked = true;
+                playerView.hideController();
+                buttonUnlock.setVisibility(View.VISIBLE);
+                Utils.showText(playerView, "Screen Locked", 1200);
+                buttonUnlock.removeCallbacks(mHideUnlockRunnable);
+                buttonUnlock.postDelayed(mHideUnlockRunnable, 3000);
+            });
+
+            buttonUnlock.setOnClickListener(v -> {
+                playerView.isLocked = false;
+                buttonUnlock.setVisibility(View.GONE);
+                playerView.showController();
+                Utils.showText(playerView, "Screen Unlocked", 1200);
+            });
+
+            playerView.onLockedTouchCallback = () -> {
+                if (buttonUnlock.getVisibility() == View.VISIBLE) {
+                    buttonUnlock.setVisibility(View.GONE);
+                } else {
+                    buttonUnlock.setVisibility(View.VISIBLE);
+                    buttonUnlock.removeCallbacks(mHideUnlockRunnable);
+                    buttonUnlock.postDelayed(mHideUnlockRunnable, 3000);
+                }
+            };
+        }
+
+        exoPrev = findViewById(R.id.exo_prev);
+        if (exoPrev != null) {
+            exoPrev.setOnClickListener(view -> skipToPrevious());
+        }
+
+        exoNext = findViewById(R.id.exo_next);
+        if (exoNext != null) {
+            exoNext.setOnClickListener(view -> skipToNext());
+        }
+        findViewById(R.id.button_back).setOnClickListener(v -> returnToLibrary());
+        findViewById(R.id.button_minimal_play).setOnClickListener(v -> dispatchPlayPause());
+        findViewById(R.id.button_rotate).setOnClickListener(v -> {
+            manualOrientation = true;
+            boolean portrait = getResources().getConfiguration().orientation == Configuration.ORIENTATION_PORTRAIT;
+            setRequestedOrientation(portrait ? ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+            playerView.showController();
         });
 
-        int titleViewPadding = getResources().getDimensionPixelOffset(R.dimen.exo_styled_bottom_bar_time_padding);
-        FrameLayout centerView = playerView.findViewById(R.id.exo_controls_background);
-        titleView = new TextView(this);
-        titleView.setBackgroundResource(R.color.ui_controls_background);
-        titleView.setTextColor(Color.WHITE);
-        titleView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        titleView.setPadding(titleViewPadding, titleViewPadding, titleViewPadding, titleViewPadding);
-        titleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        durationView = findViewById(R.id.exo_duration);
+        TextView positionView = findViewById(R.id.exo_position);
+        if (durationView != null) {
+            durationView.setOnClickListener(v -> {
+                mShowRemainingTime = !mShowRemainingTime;
+                updateDurationText();
+            });
+
+            durationView.addTextChangedListener(new TextWatcher() {
+                private boolean mUpdating = false;
+
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    if (mUpdating || !mShowRemainingTime || player == null) return;
+                    long duration = player.getDuration();
+                    if (duration <= 0) return;
+                    long remaining = Math.max(0, duration - player.getCurrentPosition());
+                    String remainingStr = "-" + Utils.formatMilis(remaining);
+                    if (!remainingStr.equals(s.toString())) {
+                        mUpdating = true;
+                        durationView.setText(remainingStr);
+                        mUpdating = false;
+                    }
+                }
+            });
+        }
+        if (positionView != null) {
+            positionView.addTextChangedListener(new TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+
+                @Override
+                public void onTextChanged(CharSequence s, int start, int before, int count) {}
+
+                @Override
+                public void afterTextChanged(Editable s) {
+                    if (mShowRemainingTime) {
+                        updateDurationText();
+                    }
+                }
+            });
+        }
+
+        titleView = findViewById(R.id.player_title);
         titleView.setVisibility(View.GONE);
-        titleView.setMaxLines(1);
-        titleView.setEllipsize(TextUtils.TruncateAt.END);
-        titleView.setTextDirection(View.TEXT_DIRECTION_LOCALE);
-        centerView.addView(titleView);
 
         titleView.setOnLongClickListener(view -> {
             final Intent shareIntent = new Intent(Intent.ACTION_SEND);
@@ -316,13 +489,14 @@ public class PlayerActivity extends Activity {
             else
                 shareIntent.setType(mPrefs.mediaType);
             shareIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            // Start without intent chooser to allow any target to be set as default
             startActivity(shareIntent);
-
             return true;
         });
 
         controlView = playerView.findViewById(R.id.exo_controller);
+        if (controlView != null) {
+            controlView.setAnimationEnabled(false);
+        }
         controlView.setOnApplyWindowInsetsListener((view, windowInsets) -> {
             if (windowInsets != null) {
                 view.setPadding(0, windowInsets.getSystemWindowInsetTop(),
@@ -348,14 +522,11 @@ public class PlayerActivity extends Activity {
                     }
                 }
 
-                Utils.setViewParams(titleView, paddingLeft + titleViewPadding, titleViewPadding, paddingRight + titleViewPadding, titleViewPadding,
-                        marginLeft, windowInsets.getSystemWindowInsetTop(), marginRight, 0);
+                Utils.setViewParams(findViewById(R.id.player_top_bar), paddingLeft, 0, paddingRight, 0,
+                        marginLeft, 0, marginRight, 0);
 
                 Utils.setViewParams(findViewById(R.id.exo_bottom_bar), paddingLeft, 0, paddingRight, 0,
                         marginLeft, 0, marginRight, 0);
-
-                findViewById(R.id.exo_progress).setPadding(windowInsets.getSystemWindowInsetLeft(), 0,
-                        windowInsets.getSystemWindowInsetRight(), 0);
 
                 windowInsets.consumeSystemWindowInsets();
             }
@@ -371,23 +542,10 @@ public class PlayerActivity extends Activity {
             e.printStackTrace();
         }
 
-        findViewById(R.id.delete).setOnClickListener(view -> {
-            askDeleteMedia();
-        });
-
-        findViewById(R.id.next).setOnClickListener(view -> {
-            if (!Utils.isTvBox(this) && mPrefs.askScope) {
-                askForScope(false, true);
-            } else {
-                skipToNext();
-            }
-        });
-
         exoPlayPause.setOnClickListener(view -> dispatchPlayPause());
 
         // Prevent double tap actions in controller
         findViewById(R.id.exo_bottom_bar).setOnTouchListener((v, event) -> true);
-        //titleView.setOnTouchListener((v, event) -> true);
 
         playbackStateListener = new PlaybackStateListener();
 
@@ -397,46 +555,14 @@ public class PlayerActivity extends Activity {
             mBrightnessControl.setScreenBrightness(mBrightnessControl.levelToBrightness(mBrightnessControl.currentBrightnessLevel));
         }
 
-        final LinearLayout exoBasicControls = playerView.findViewById(R.id.exo_basic_controls);
-        final ImageButton exoSubtitle = exoBasicControls.findViewById(R.id.exo_subtitle);
-        exoBasicControls.removeView(exoSubtitle);
-
-        final ImageButton exoSettings = exoBasicControls.findViewById(R.id.exo_settings);
-        exoBasicControls.removeView(exoSettings);
-        //exoBasicControls.setVisibility(View.GONE);
-
-        exoSettings.setOnLongClickListener(view -> {
-            askForScope(false, false);
-            return true;
-        });
-
-        final HorizontalScrollView horizontalScrollView = (HorizontalScrollView) getLayoutInflater().inflate(R.layout.controls, null);
-        final LinearLayout controls = horizontalScrollView.findViewById(R.id.controls);
-
-        controls.addView(buttonOpen);
-        controls.addView(exoSubtitle);
-        controls.addView(buttonAspectRatio);
-        if (isPiPSupported()) {
-            controls.addView(buttonPiP);
-        }
-        if (!Utils.isTvBox(this)) {
-            controls.addView(buttonRotation);
-        }
-        controls.addView(exoSettings);
-
-        exoBasicControls.addView(horizontalScrollView);
-
-        if (Build.VERSION.SDK_INT > 23) {
-            horizontalScrollView.setOnScrollChangeListener((view, i, i1, i2, i3) -> {
-                resetHideCallbacks();
-            });
-        }
-
         playerView.setControllerVisibilityListener(new StyledPlayerControlView.VisibilityListener() {
             @Override
             public void onVisibilityChange(int visibility) {
                 controllerVisible = visibility == View.VISIBLE;
                 controllerVisibleFully = playerView.isControllerFullyVisible();
+                liveSubtitles.setControlsVisible(controllerVisible);
+                SubtitleView captions = playerView.getSubtitleView();
+                SubtitleAppearance.apply(PlayerActivity.this,captions,isInPip(),controllerVisible);
 
                 if (PlayerActivity.restoreControllerTimeout) {
                     restoreControllerTimeout = false;
@@ -458,7 +584,7 @@ public class PlayerActivity extends Activity {
                 }
 
                 if (controllerVisible && playerView.isControllerFullyVisible()) {
-                    if (mPrefs.firstRun) {
+                    if (mPrefs.firstRun && !haveMedia) {
                         TapTargetView.showFor(PlayerActivity.this,
                                 TapTarget.forView(buttonOpen, getString(R.string.onboarding_open_title), getString(R.string.onboarding_open_description))
                                         .outerCircleColor(R.color.green)
@@ -490,9 +616,14 @@ public class PlayerActivity extends Activity {
     @Override
     public void onStart() {
         super.onStart();
+        CaptionAutoJobs.playerActive(this,true);
+        mPrefs = new Prefs(this);
         alive = true;
+        if (orientationEventListener != null && orientationEventListener.canDetectOrientation()) {
+            orientationEventListener.enable();
+        }
         updateSubtitleStyle();
-        initializePlayer();
+        if (player == null) initializePlayer();
     }
 
     @Override
@@ -501,9 +632,22 @@ public class PlayerActivity extends Activity {
     }
 
     @Override
+    public void onPause() {
+        saveWatchHistory();
+        super.onPause();
+    }
+
+    @Override
     public void onStop() {
         super.onStop();
+        if(!isInPip())CaptionAutoJobs.playerActive(this,false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode()) {
+            return;
+        }
         alive = false;
+        if (orientationEventListener != null) {
+            orientationEventListener.disable();
+        }
         releasePlayer();
     }
 
@@ -511,12 +655,28 @@ public class PlayerActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
 
-        if (intent != null && Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+        if (intent != null && intent.getData() != null) {
+            releasePlayer();
+            setIntent(intent);
+            mVideoPath = intent.getStringExtra("video_path");
             mPrefs.updateMedia(this, intent.getData(), intent.getType());
             searchSubtitles();
 			focusPlay = true;
             initializePlayer();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        CaptionAutoJobs.playerActive(this,false);
+        if (liveSubtitles != null) { liveSubtitles.clear();updateCaptionCancel(); }
+        if (buttonUnlock != null) buttonUnlock.removeCallbacks(mHideUnlockRunnable);
+        if (mReceiver != null) {
+            unregisterReceiver(mReceiver);
+            mReceiver = null;
+        }
+        if (isFinishing() && player != null && playerView.getPlayer() == player) releasePlayer();
+        super.onDestroy();
     }
 
     @Override
@@ -614,6 +774,7 @@ public class PlayerActivity extends Activity {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
 
         if (isInPictureInPictureMode) {
+            liveSubtitles.resize(true);
             setSubtitleTextSizePiP();
             playerView.setScale(1.f);
             mReceiver = new BroadcastReceiver() {
@@ -635,6 +796,7 @@ public class PlayerActivity extends Activity {
             };
             registerReceiver(mReceiver, new IntentFilter(ACTION_MEDIA_CONTROL));
         } else {
+            liveSubtitles.resize(false);
             setSubtitleTextSize();
             if (mPrefs.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_ZOOM) {
                 playerView.setScale(mPrefs.scale);
@@ -658,6 +820,14 @@ public class PlayerActivity extends Activity {
             e.printStackTrace();
         }
 
+        if(requestCode==4200) {
+            if(resultCode==RESULT_OK && data!=null && data.getData()!=null) {
+                liveSubtitles.clear();mPrefs.updateSubtitle(data.getData());
+                if(player!=null)applySubtitle(data.getData());
+            }
+            return;
+        }
+
         if (resultCode == RESULT_OK && alive) {
             releasePlayer();
         }
@@ -670,7 +840,8 @@ public class PlayerActivity extends Activity {
                 // https://commonsware.com/blog/2020/06/13/count-your-saf-uri-permission-grants.html
                 final ContentResolver contentResolver = getContentResolver();
                 for (UriPermission persistedUri : contentResolver.getPersistedUriPermissions()) {
-                    if (persistedUri.getUri().equals(mPrefs.scopeUri)) {
+                    if (persistedUri.getUri().equals(mPrefs.scopeUri)
+                            || persistedUri.getUri().getPathSegments().contains("tree")) {
                         continue;
                     } else if (persistedUri.getUri().equals(uri)) {
                         uriAlreadyTaken = true;
@@ -734,7 +905,24 @@ public class PlayerActivity extends Activity {
     }
 
     public void initializePlayer() {
+        if (SubtitleGenerator.isObsoleteCache(mPrefs.subtitleUri)) mPrefs.updateSubtitle(null);
         haveMedia = mPrefs.mediaUri != null && (Utils.fileExists(this, mPrefs.mediaUri) || Utils.isSupportedNetworkUri(mPrefs.mediaUri));
+        if (haveMedia && mPrefs.mediaUri != null) {
+            String path = SubtitleGenerator.resolveRealPath(this, mPrefs.mediaUri);
+            mVideoPath = path;
+            if (SubtitleGenerator.isGeneratedCache(mPrefs.subtitleUri)
+                    && (!new File(mPrefs.subtitleUri.getPath()).isFile()
+                    || !Uri.fromFile(SubtitleGenerator.getCachedSubtitleFile(this, mPrefs.mediaUri, path)).equals(mPrefs.subtitleUri))) {
+                mPrefs.updateSubtitle(null);
+            }
+            if(CaptionLibrary.isSaved(this,mPrefs.subtitleUri)
+                    && (!new File(mPrefs.subtitleUri.getPath()).isFile()
+                    || !Uri.fromFile(CaptionLibrary.saved(this,mPrefs.mediaUri,CaptionPackages.get(this).selected())).equals(mPrefs.subtitleUri)))mPrefs.updateSubtitle(null);
+            if (mPrefs.subtitleUri == null) {
+                File cached = CaptionLibrary.find(this, mPrefs.mediaUri, mVideoPath);
+                if (cached != null && cached.isFile() && cached.length() > 0) mPrefs.updateSubtitle(Uri.fromFile(cached));
+            }
+        }
 
         if (player == null) {
             trackSelector = new DefaultTrackSelector(this);
@@ -795,7 +983,11 @@ public class PlayerActivity extends Activity {
             youTubeOverlay.player(player);
         }
 
+        player.removeTextOutput(consistentSubtitleOutput);
         playerView.setPlayer(player);
+        // StyledPlayerView's output is registered first; normalize the same frame before drawing.
+        player.addTextOutput(consistentSubtitleOutput);
+        if(playerView.getSubtitleView()!=null)playerView.getSubtitleView().setCues(SubtitleAppearance.normalize(player.getCurrentCues()));
 
         mediaSession = new MediaSessionCompat(this, getString(R.string.app_name));
         MediaSessionConnector mediaSessionConnector = new MediaSessionConnector(mediaSession);
@@ -865,11 +1057,20 @@ public class PlayerActivity extends Activity {
                 }
             });
 
+            player.addVideoListener(new com.google.android.exoplayer2.video.VideoListener() {
+                @Override
+                public void onVideoSizeChanged(int width, int height, int unappliedRotationDegrees, float pixelWidthHeightRatio) {
+                    if (!manualOrientation && mPrefs.orientation == Utils.Orientation.VIDEO) {
+                        Utils.applyOrientation(PlayerActivity.this, Utils.isPortrait(width, height, unappliedRotationDegrees));
+                    }
+                }
+            });
+
             videoLoading = true;
 
             updateLoading(true);
 
-            play = mPrefs.getPosition() == 0L;
+            play = true;
 
             player.seekTo(mPrefs.getPosition());
 
@@ -884,6 +1085,7 @@ public class PlayerActivity extends Activity {
             ((DoubleTapPlayerView)playerView).setDoubleTapEnabled(true);
 
             nextUri = findNext();
+            updatePlaylistButtons();
 
             player.setHandleAudioBecomingNoisy(true);
             mediaSession.setActive(true);
@@ -894,13 +1096,22 @@ public class PlayerActivity extends Activity {
         player.addListener(playbackStateListener);
         player.prepare();
 
-        if (restorePlayState) {
+        if (restorePlayState || play) {
             restorePlayState = false;
             player.play();
         }
     }
 
     public void releasePlayer() {
+        playerView.removeCallbacks(watchCheckpoint);
+        playerView.cancelPendingGestures();
+        int selectedSubtitle = liveSubtitles != null && liveSubtitles.isActive()
+                ? (liveSubtitles.isEnabled() ? 0 : Integer.MIN_VALUE) : getSelectedTrackSubtitle();
+        if (liveSubtitles != null) { liveSubtitles.clear();updateCaptionCancel(); }
+        playerView.removeCallbacks(mHideUnlockRunnable);
+        if (buttonUnlock != null) buttonUnlock.removeCallbacks(mHideUnlockRunnable);
+        playerView.isLocked = false;
+        if (buttonUnlock != null) buttonUnlock.setVisibility(View.GONE);
         if (player != null) {
             mediaSession.setActive(false);
             mediaSession.release();
@@ -909,11 +1120,12 @@ public class PlayerActivity extends Activity {
             mPrefs.updateOrientation();
 
             if (haveMedia) {
+                saveWatchHistory();
                 // Prevent overwriting temporarily inaccessible media position
                 if (player.isCurrentWindowSeekable()) {
                     mPrefs.updatePosition(player.getCurrentPosition());
                 }
-                mPrefs.updateMeta(getSelectedTrackAudio(false), getSelectedTrackAudio(true), getSelectedTrackSubtitle(), playerView.getResizeMode(), playerView.getVideoSurfaceView().getScaleX());
+                mPrefs.updateMeta(getSelectedTrackAudio(false), getSelectedTrackAudio(true), selectedSubtitle, playerView.getResizeMode(), playerView.getVideoSurfaceView().getScaleX());
             }
 
             if (player.isPlaying()) {
@@ -923,6 +1135,10 @@ public class PlayerActivity extends Activity {
             player.clearMediaItems();
             player.release();
             player = null;
+            if (loudnessEnhancer != null) {
+                loudnessEnhancer.release();
+                loudnessEnhancer = null;
+            }
         }
         titleView.setVisibility(View.GONE);
         if (buttonPiP != null)
@@ -930,10 +1146,22 @@ public class PlayerActivity extends Activity {
         Utils.setButtonEnabled(this, buttonAspectRatio, false);
     }
 
+    private void saveWatchHistory() {
+        if (player != null && haveMedia && mPrefs.mediaUri != null) {
+            new WatchHistory(this).record(mPrefs.mediaUri, player.getCurrentPosition(),
+                    player.getDuration(), player.getPlaybackState() == Player.STATE_ENDED);
+        }
+    }
+
     private class PlaybackStateListener implements Player.EventListener{
         @Override
         public void onIsPlayingChanged(boolean isPlaying) {
+            playerView.removeCallbacks(watchCheckpoint);
+            if (isPlaying) playerView.postDelayed(watchCheckpoint, 15000);
+            if (!isPlaying) saveWatchHistory();
             playerView.setKeepScreenOn(isPlaying);
+            ((ImageButton) findViewById(R.id.button_minimal_play)).setImageResource(
+                    isPlaying ? R.drawable.ic_pause_24dp : R.drawable.ic_play_arrow_24dp);
 
             if (isPiPSupported()) {
                 if (isPlaying) {
@@ -941,17 +1169,14 @@ public class PlayerActivity extends Activity {
                 } else {
                     updatePictureInPictureActions(R.drawable.ic_play_arrow_24dp, "Play", CONTROL_TYPE_PLAY, REQUEST_PLAY);
                 }
+                updatePiPParams();
             }
 
             if (!isScrubbing) {
                 if (isPlaying) {
-                    if (shortControllerTimeout) {
-                        playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT / 3);
-                        shortControllerTimeout = false;
-                        restoreControllerTimeout = true;
-                    } else {
-                        playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT);
-                    }
+                    shortControllerTimeout = false;
+                    restoreControllerTimeout = false;
+                    playerView.setControllerShowTimeoutMs(CONTROLLER_TIMEOUT);
                 } else {
                     playerView.setControllerShowTimeoutMs(-1);
                 }
@@ -970,6 +1195,14 @@ public class PlayerActivity extends Activity {
             }
             setEndControlsVisible(haveMedia && (state == Player.STATE_ENDED || isNearEnd));
 
+            if (state == Player.STATE_ENDED) {
+                saveWatchHistory();
+                if (mPrefs.autoPlayNext && nextUri != null) {
+                    playerView.post(PlayerActivity.this::skipToNext);
+                    return;
+                }
+            }
+
             if (state == Player.STATE_READY) {
                 frameRendered = true;
 
@@ -980,22 +1213,19 @@ public class PlayerActivity extends Activity {
                     float frameRateExo = Format.NO_VALUE;
 
                     if (format != null) {
-                        if (mPrefs.orientation == Utils.Orientation.VIDEO) {
-                            if (Utils.isPortrait(format)) {
-                                PlayerActivity.this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-                            } else {
-                                PlayerActivity.this.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-                            }
+                        if (!manualOrientation && mPrefs.orientation == Utils.Orientation.VIDEO) {
+                            Utils.applyOrientation(PlayerActivity.this, Utils.isPortrait(format));
                         }
                         frameRateExo = format.frameRate;
                     }
+                    updatePiPParams();
 
                     boolean switched = Utils.switchFrameRate(PlayerActivity.this, frameRateExo, mPrefs.mediaUri);
                     if (play) {
                         play = false;
                         if (!switched) {
                             player.play();
-                            playerView.hideController();
+                            playerView.showController();
                         }
                     }
 
@@ -1005,8 +1235,15 @@ public class PlayerActivity extends Activity {
                         setSelectedTrackAudio(mPrefs.audioTrack, false);
                         setSelectedTrackAudio(mPrefs.audioTrackFfmpeg, true);
                     }
-                    if (mPrefs.subtitleTrack != -1 && (mPrefs.subtitleTrack < getTrackCountSubtitle() || mPrefs.subtitleTrack == Integer.MIN_VALUE))
+                    if (mPrefs.subtitleTrack != -1 && (mPrefs.subtitleTrack < getTrackCountSubtitle() || mPrefs.subtitleTrack == Integer.MIN_VALUE)) {
                         setSelectedTrackSubtitle(mPrefs.subtitleTrack);
+                    } else if (mPrefs.subtitleTrack == -1 && getTrackCountSubtitle() > 0) {
+                        setSelectedTrackSubtitle(0);
+                    } else if (getTrackCountSubtitle() == 0 && mPrefs.subtitleUri == null) {
+                        triggerAutoSubtitleGeneration();
+                    }
+                    updateSubtitleButtonState(getSelectedTrackSubtitle() >= 0 || mPrefs.subtitleUri != null);
+                    updatePlaylistButtons();
                 }
             }
         }
@@ -1014,11 +1251,11 @@ public class PlayerActivity extends Activity {
         @Override
         public void onPlayerError(ExoPlaybackException error) {
             updateLoading(false);
-            if (controllerVisible && controllerVisibleFully) {
-                showError(error);
-            } else {
-                errorToShow = error;
-            }
+            if (liveSubtitles != null) { liveSubtitles.clear();updateCaptionCancel(); }
+            errorToShow = null;
+            playerView.setControllerShowTimeoutMs(0);
+            playerView.showController();
+            showError(error);
         }
     }
 
@@ -1233,28 +1470,11 @@ public class PlayerActivity extends Activity {
     }
 
     void setSubtitleTextSize(final int orientation) {
-        // Tweak text size as fraction size doesn't work well in portrait
-        final SubtitleView subtitleView = playerView.getSubtitleView();
-        if (subtitleView != null) {
-            final float size;
-            if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                size = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subtitlesScale;
-            } else {
-                DisplayMetrics metrics = getResources().getDisplayMetrics();
-                float ratio = ((float)metrics.heightPixels / (float)metrics.widthPixels);
-                if (ratio < 1)
-                    ratio = 1 / ratio;
-                size = SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * subtitlesScale / ratio;
-            }
-
-            subtitleView.setFractionalTextSize(size);
-        }
+        SubtitleAppearance.apply(this,playerView.getSubtitleView(),false,controllerVisible);
     }
 
     void setSubtitleTextSizePiP() {
-        final SubtitleView subtitleView = playerView.getSubtitleView();
-        if (subtitleView != null)
-            subtitleView.setFractionalTextSize(SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * 2);
+        SubtitleAppearance.apply(this,playerView.getSubtitleView(),true,controllerVisible);
     }
 
     boolean isPiPSupported() {
@@ -1282,8 +1502,9 @@ public class PlayerActivity extends Activity {
     public void onConfigurationChanged(@NonNull Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
 
-        if (!isInPip())
-            setSubtitleTextSize(newConfig.orientation);
+        SubtitleAppearance.apply(this,playerView.getSubtitleView(),isInPip(),controllerVisible);
+        liveSubtitles.resize(isInPip());
+        if (controllerVisible && !isInPip() && !playerView.isLocked) playerView.showController();
     }
 
     void showError(ExoPlaybackException error) {
@@ -1340,37 +1561,36 @@ public class PlayerActivity extends Activity {
     }
 
     void updateSubtitleStyle() {
-        final CaptioningManager captioningManager = (CaptioningManager) getSystemService(Context.CAPTIONING_SERVICE);
-        final SubtitleView subtitleView = playerView.getSubtitleView();
-        if (!captioningManager.isEnabled()) {
-            subtitlesScale = 1.05f;
-            final CaptionStyleCompat captionStyle = new CaptionStyleCompat(Color.WHITE, Color.TRANSPARENT, Color.TRANSPARENT, CaptionStyleCompat.EDGE_TYPE_OUTLINE, Color.BLACK, Typeface.DEFAULT_BOLD);
-            if (subtitleView != null) {
-                subtitleView.setStyle(captionStyle);
-                subtitleView.setApplyEmbeddedStyles(true);
-            }
-        } else {
-            subtitlesScale = captioningManager.getFontScale();
-            if (subtitleView != null) {
-                subtitleView.setUserDefaultStyle();
-                // Do not apply embedded style as currently the only supported color style is PrimaryColour
-                // https://github.com/google/ExoPlayer/issues/8435#issuecomment-762449001
-                // This may result in poorly visible text (depending on user's selected edgeColor)
-                // The same can happen with style provided using setStyle but enabling CaptioningManager should be a way to change the behavior
-                subtitleView.setApplyEmbeddedStyles(false);
-            }
-        }
-
-        if (subtitleView != null)
-            subtitleView.setBottomPaddingFraction(SubtitleView.DEFAULT_BOTTOM_PADDING_FRACTION * 2f / 3f);
-
-        setSubtitleTextSize();
+        SubtitleAppearance.apply(this,playerView.getSubtitleView(),isInPip(),controllerVisible);
+        liveSubtitles.resize(isInPip());
     }
 
     void searchSubtitles() {
         if (mPrefs.mediaUri == null)
             return;
+        mVideoPath = SubtitleGenerator.resolveRealPath(this, mPrefs.mediaUri);
 
+        // 1. Check if cached generated/extracted subtitle already exists for this video
+        File cachedSrt = CaptionLibrary.find(this, mPrefs.mediaUri, mVideoPath);
+        if (cachedSrt != null && cachedSrt.exists() && cachedSrt.length() > 30) {
+            mPrefs.updateSubtitle(Uri.fromFile(cachedSrt));
+            return;
+        }
+
+        // 2. Check if a local subtitle exists right next to the video on disk
+        if (mVideoPath == null && "file".equals(mPrefs.mediaUri.getScheme())) {
+            mVideoPath = mPrefs.mediaUri.getPath();
+        }
+        if (mVideoPath != null) {
+            File localSub = SubtitleGenerator.findLocalSubtitle(mVideoPath);
+            if (localSub != null) {
+                Uri subUri = SubtitleUtils.convertToUTF(this, Uri.fromFile(localSub));
+                mPrefs.updateSubtitle(subUri);
+                return;
+            }
+        }
+
+        // 3. Fall back to SAF scope / TV box search
         if (mPrefs.scopeUri != null || Utils.isTvBox(this)) {
             DocumentFile video = null;
             File videoRaw = null;
@@ -1411,7 +1631,218 @@ public class PlayerActivity extends Activity {
         }
     }
 
+    private void updateDurationText() {
+        if (durationView == null || player == null) return;
+        long duration = player.getDuration();
+        if (duration <= 0) return;
+        if (mShowRemainingTime) {
+            long remaining = Math.max(0, duration - player.getCurrentPosition());
+            durationView.setText("-" + Utils.formatMilis(remaining));
+        } else {
+            durationView.setText(Utils.formatMilis(duration));
+        }
+    }
+
+    private void updateSubtitleButtonState(boolean enabled) {
+        if (buttonSubtitle != null) {
+            if (enabled) {
+                buttonSubtitle.setAlpha(1.0f);
+                buttonSubtitle.setColorFilter(getResources().getColor(R.color.player_accent));
+            } else {
+                buttonSubtitle.setAlpha(0.6f);
+                buttonSubtitle.setColorFilter(Color.WHITE);
+            }
+        }
+    }
+
+    private void toggleSubtitles() {
+        if (liveSubtitles.isActive()) {
+            liveSubtitles.toggle();
+            updateSubtitleButtonState(liveSubtitles.isEnabled());
+            return;
+        }
+        int current = getSelectedTrackSubtitle();
+        if (current >= 0) {
+            setSelectedTrackSubtitle(Integer.MIN_VALUE);
+            mPrefs.updateSubtitleTrack(Integer.MIN_VALUE);
+            updateSubtitleButtonState(false);
+            Utils.showText(playerView, "Subtitles off");
+        } else {
+            int targetTrack = (mPrefs.subtitleTrack >= 0 && mPrefs.subtitleTrack < getTrackCountSubtitle()) ? mPrefs.subtitleTrack : 0;
+            setSelectedTrackSubtitle(targetTrack);
+            mPrefs.updateSubtitleTrack(targetTrack);
+            updateSubtitleButtonState(true);
+            Utils.showText(playerView, "Subtitles on");
+        }
+    }
+
+    private void showSubtitleTracksDialog() {
+        if (trackSelector == null) return;
+        final MappingTrackSelector.MappedTrackInfo mappedTrackInfo = trackSelector.getCurrentMappedTrackInfo();
+        if (mappedTrackInfo == null) return;
+
+        List<String> trackNames = new ArrayList<>();
+        List<Integer> trackIndices = new ArrayList<>();
+
+        trackNames.add(getString(R.string.exo_track_selection_none));
+        trackIndices.add(Integer.MIN_VALUE);
+
+        int currentSelected = getSelectedTrackSubtitle();
+        int selectedDialogIndex = (currentSelected < 0) ? 0 : -1;
+
+        for (int r = 0; r < mappedTrackInfo.getRendererCount(); r++) {
+            if (mappedTrackInfo.getRendererType(r) == C.TRACK_TYPE_TEXT) {
+                TrackGroupArray trackGroups = mappedTrackInfo.getTrackGroups(r);
+                for (int i = 0; i < trackGroups.length; i++) {
+                    Format format = trackGroups.get(i).getFormat(0);
+                    String label = format.label != null ? format.label : (format.language != null ? format.language : ("Track " + (i + 1)));
+                    trackNames.add(label);
+                    trackIndices.add(i);
+                    if (currentSelected == i) {
+                        selectedDialogIndex = trackNames.size() - 1;
+                    }
+                }
+            }
+        }
+
+        if (trackNames.size() <= 1) {
+            forceGenerateSubtitles();
+            return;
+        }
+
+        CharSequence[] items = trackNames.toArray(new CharSequence[0]);
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle(R.string.exo_track_selection_title_text);
+        builder.setSingleChoiceItems(items, selectedDialogIndex, (dialog, which) -> {
+            int chosenTrack = trackIndices.get(which);
+            setSelectedTrackSubtitle(chosenTrack);
+            mPrefs.updateSubtitleTrack(chosenTrack);
+            updateSubtitleButtonState(chosenTrack >= 0);
+            dialog.dismiss();
+        });
+        builder.setNegativeButton(android.R.string.cancel, null);
+        builder.show();
+    }
+
+    private void showSubtitleOptions() {
+        List<String> options = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        if (liveSubtitles.isActive() || getTrackCountSubtitle() > 0 || mPrefs.subtitleUri != null) {
+            options.add(getString(R.string.captions_toggle));
+            actions.add(this::toggleSubtitles);
+        }
+        if (getTrackCountSubtitle() > 0) {
+            options.add(getString(R.string.captions_tracks));
+            actions.add(() -> {
+                liveSubtitles.clear();
+                showSubtitleTracksDialog();
+            });
+        }
+        options.add(getString(R.string.captions_open));
+        actions.add(() -> loadSubtitleFile(mPrefs.mediaUri));
+        if (liveSubtitles.isGenerating()) {
+            options.add(getString(R.string.captions_cancel));
+            actions.add(liveSubtitles::stopGeneration);
+        } else {
+            options.add(getString(R.string.captions_create));
+            actions.add(this::forceGenerateSubtitles);
+            options.add("Regenerate subtitles");
+            actions.add(() -> new AlertDialog.Builder(this).setMessage("Replace generated subtitles and saved edits after generation succeeds?")
+                .setPositiveButton("Regenerate",(d,w)->generateCaptions(true)).setNegativeButton(android.R.string.cancel,null).show());
+            options.add("Edit / export subtitles");
+            actions.add(() -> {
+                if(player!=null)player.pause();
+                startActivityForResult(new Intent(this,SubtitleEditorActivity.class).setData(mPrefs.mediaUri).putExtra("path",mVideoPath).putExtra("subtitle",mPrefs.subtitleUri),4200);
+            });
+        }
+        options.add(getString(R.string.subtitle_appearance));
+        actions.add(() -> startActivity(new Intent(this,SettingsActivity.class).putExtra("subtitle_appearance",true)));
+        options.add("Audio language & offline packs");
+        actions.add(() -> startActivity(new Intent(this,SettingsActivity.class)));
+        playerView.setControllerShowTimeoutMs(0);
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.subtitle_options)
+                .setItems(options.toArray(new String[0]), (d, which) -> actions.get(which).run())
+                .setNegativeButton(android.R.string.cancel, null).create();
+        dialog.setOnDismissListener(d -> resetHideCallbacks());
+        dialog.show();
+    }
+
+    private void updateCaptionCancel() {
+        View cancel=findViewById(R.id.button_cancel_captions);
+        cancel.setVisibility(liveSubtitles.isGenerating()?View.VISIBLE:View.GONE);
+        cancel.setEnabled(!liveSubtitles.isCancelling());
+    }
+
+    private void forceGenerateSubtitles() { generateCaptions(false); }
+
+    private void generateCaptions(boolean force) {
+        if (mPrefs.mediaUri == null || player == null || liveSubtitles.isGenerating()) return;
+        final Uri targetUri = mPrefs.mediaUri;
+        liveSubtitles.start(targetUri, mVideoPath, subtitleUri -> {
+            if (!targetUri.equals(mPrefs.mediaUri) || player == null) return;
+            if (liveSubtitles.hasCues()) {
+                mPrefs.updateSubtitle(subtitleUri);
+            } else {
+                applySubtitle(subtitleUri);
+            }
+        }, () -> { updateSubtitleButtonState(liveSubtitles.isEnabled());updateCaptionCancel(); },force);
+        updateCaptionCancel();
+        updateSubtitleButtonState(liveSubtitles.isEnabled());
+    }
+
+    private void triggerAutoSubtitleGeneration() {
+        String request=getIntent().getStringExtra("caption_request");
+        if(request!=null) { getIntent().removeExtra("caption_request");generateCaptions("regenerate".equals(request));return; }
+        CaptionWorkStore.Entry previous=new CaptionWorkStore(this).read(mPrefs.mediaUri,CaptionPackages.get(this).selected());
+        if(previous!=null && (previous.status==CaptionWorkStore.Status.CANCELLED || previous.status==CaptionWorkStore.Status.FAILED))return;
+        if (!mPrefs.liveCaptions) {
+            return;
+        }
+        if (getTrackCountSubtitle() > 0 || mPrefs.subtitleUri != null) {
+            return;
+        }
+        forceGenerateSubtitles();
+    }
+
+    private void applySubtitle(Uri subtitleUri) {
+        if (player == null || subtitleUri == null) return;
+        mPrefs.updateSubtitle(subtitleUri);
+        final String subtitleMime = SubtitleUtils.getSubtitleMime(subtitleUri);
+        final String subtitleLanguage = SubtitleUtils.getSubtitleLanguage(subtitleUri);
+        String subtitleName = Utils.getFileName(this, subtitleUri);
+        if (subtitleName == null) subtitleName = "Auto Subtitles";
+
+        MediaItem.Subtitle subtitle = new MediaItem.Subtitle(subtitleUri, subtitleMime,
+                subtitleLanguage, C.SELECTION_FLAG_DEFAULT, C.ROLE_FLAG_SUBTITLE, subtitleName);
+
+        long currentPosition = player.getCurrentPosition();
+        boolean wasPlaying = player.isPlaying();
+
+        MediaItem currentItem = player.getCurrentMediaItem();
+        MediaItem.Builder mediaItemBuilder;
+        if (currentItem != null) {
+            mediaItemBuilder = currentItem.buildUpon();
+        } else {
+            mediaItemBuilder = new MediaItem.Builder().setUri(mPrefs.mediaUri);
+        }
+        mediaItemBuilder.setSubtitles(Collections.singletonList(subtitle));
+
+        player.setMediaItem(mediaItemBuilder.build(), currentPosition);
+        player.prepare();
+        if (wasPlaying) {
+            player.play();
+        }
+        setSelectedTrackSubtitle(0);
+        updateSubtitleButtonState(true);
+    }
+
     Uri findNext() {
+        final Uri playlistNext = PlaylistManager.getNext(mPrefs.mediaUri);
+        if (PlaylistManager.contains(mPrefs.mediaUri)) {
+            return playlistNext;
+        }
+
         // TODO: Unify with searchSubtitles()
         if (mPrefs.scopeUri != null || Utils.isTvBox(this)) {
             DocumentFile video = null;
@@ -1472,10 +1903,7 @@ public class PlayerActivity extends Activity {
     }
 
     void resetHideCallbacks() {
-        if (haveMedia && player != null && player.isPlaying()) {
-            // Keep controller UI visible - alternative to resetHideCallbacks()
-            playerView.setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
-        }
+        playerView.setControllerShowTimeoutMs(player != null && player.isPlaying() ? CONTROLLER_TIMEOUT : 0);
     }
 
     private void updateLoading(final boolean enableLoading) {
@@ -1495,55 +1923,95 @@ public class PlayerActivity extends Activity {
     @RequiresApi(api = Build.VERSION_CODES.O)
     @Override
     protected void onUserLeaveHint() {
-        if (mPrefs!= null && mPrefs.autoPiP && player != null && player.isPlaying() && isPiPSupported())
+        if (mPrefs != null && mPrefs.autoPiP && player != null && player.isPlaying() && isPiPSupported())
             enterPiP();
         else
             super.onUserLeaveHint();
     }
 
+    private void updatePiPParams() {
+        if (!isPiPSupported() || player == null) {
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (mPictureInPictureParamsBuilder == null) {
+                mPictureInPictureParamsBuilder = new PictureInPictureParams.Builder();
+            }
+            PictureInPictureParams.Builder builder = (PictureInPictureParams.Builder) mPictureInPictureParamsBuilder;
+            final Format format = player.getVideoFormat();
+            if (format != null && format.width > 0 && format.height > 0) {
+                Rational rational;
+                if (Utils.isRotated(format)) {
+                    rational = new Rational(format.height, format.width);
+                } else {
+                    rational = new Rational(format.width, format.height);
+                }
+                if (rational.floatValue() > rationalLimitWide.floatValue()) {
+                    rational = rationalLimitWide;
+                } else if (rational.floatValue() < rationalLimitTall.floatValue()) {
+                    rational = rationalLimitTall;
+                }
+                builder.setAspectRatio(rational);
+
+                final View videoSurfaceView = (playerView != null) ? playerView.getVideoSurfaceView() : null;
+                if (videoSurfaceView != null) {
+                    Rect sourceRectHint = new Rect();
+                    videoSurfaceView.getGlobalVisibleRect(sourceRectHint);
+                    builder.setSourceRectHint(sourceRectHint);
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= 31) {
+                boolean shouldAutoEnter = player.isPlaying() && (mPrefs == null || mPrefs.autoPiP);
+                try {
+                    Method setAutoEnterEnabledMethod = builder.getClass().getMethod("setAutoEnterEnabled", boolean.class);
+                    setAutoEnterEnabledMethod.invoke(builder, shouldAutoEnter);
+                } catch (Exception e) {
+                    // Method not available
+                }
+            }
+
+            try {
+                setPictureInPictureParams(builder.build());
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     @RequiresApi(api = Build.VERSION_CODES.O)
     private void enterPiP() {
         final AppOpsManager appOpsManager = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
-        if (AppOpsManager.MODE_ALLOWED != appOpsManager.checkOpNoThrow(AppOpsManager.OPSTR_PICTURE_IN_PICTURE, android.os.Process.myUid(), getPackageName())) {
-            startActivity(new Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS", Uri.fromParts("package", getPackageName(), null)));
-            return;
+        if (appOpsManager != null) {
+            int mode;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                mode = appOpsManager.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_PICTURE_IN_PICTURE, android.os.Process.myUid(), getPackageName());
+            } else {
+                mode = appOpsManager.checkOpNoThrow(AppOpsManager.OPSTR_PICTURE_IN_PICTURE, android.os.Process.myUid(), getPackageName());
+            }
+            if (AppOpsManager.MODE_ALLOWED != mode) {
+                startActivity(new Intent("android.settings.PICTURE_IN_PICTURE_SETTINGS", Uri.fromParts("package", getPackageName(), null)));
+                return;
+            }
         }
 
         playerView.setControllerAutoShow(false);
-		playerView.setControllerShowTimeoutMs(0);
+        playerView.setControllerShowTimeoutMs(0);
         playerView.hideController();
 
-        final Format format = player.getVideoFormat();
+        updatePiPParams();
 
-        if (format != null) {
-            // https://github.com/google/ExoPlayer/issues/8611
-            // TODO: Test/disable on Android 11+
-            final View videoSurfaceView = playerView.getVideoSurfaceView();
-            if (videoSurfaceView instanceof SurfaceView) {
-                ((SurfaceView)videoSurfaceView).getHolder().setFixedSize(format.width, format.height);
+        try {
+            if (mPictureInPictureParamsBuilder != null) {
+                enterPictureInPictureMode(((PictureInPictureParams.Builder) mPictureInPictureParamsBuilder).build());
             }
-
-            Rational rational;
-            if (Utils.isRotated(format))
-                rational = new Rational(format.height, format.width);
-            else
-                rational = new Rational(format.width, format.height);
-
-            if (rational.floatValue() > rationalLimitWide.floatValue())
-                rational = rationalLimitWide;
-            else if (rational.floatValue() < rationalLimitTall.floatValue())
-                rational = rationalLimitTall;
-
-            ((PictureInPictureParams.Builder)mPictureInPictureParamsBuilder).setAspectRatio(rational);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        enterPictureInPictureMode(((PictureInPictureParams.Builder)mPictureInPictureParamsBuilder).build());
     }
 
     void setEndControlsVisible(boolean visible) {
-        final int deleteVisible = (visible && haveMedia && Utils.isDeletable(this, mPrefs.mediaUri)) ? View.VISIBLE : View.INVISIBLE;
-        final int nextVisible = (visible && haveMedia && (nextUri != null || (mPrefs.askScope && !Utils.isTvBox(this)))) ? View.VISIBLE : View.INVISIBLE;
-        findViewById(R.id.delete).setVisibility(deleteVisible);
-        findViewById(R.id.next).setVisibility(nextVisible);
+        // Redesigned controller does not use legacy delete/next overlay buttons
     }
 
     void askDeleteMedia() {
@@ -1574,32 +2042,62 @@ public class PlayerActivity extends Activity {
     }
 
     private void dispatchPlayPause() {
-        if (player == null)
-            return;
+        if (player == null) return;
+        int state = player.getPlaybackState();
+        if (state == Player.STATE_IDLE) player.prepare();
+        if (state == Player.STATE_ENDED) player.seekToDefaultPosition();
+        if (state == Player.STATE_ENDED || !player.getPlayWhenReady()) player.play();
+        else player.pause();
+        playerView.showController();
+    }
 
-        @Player.State int state = player.getPlaybackState();
-        String methodName;
-        if (state == Player.STATE_IDLE || state == Player.STATE_ENDED || !player.getPlayWhenReady()) {
-            methodName = "dispatchPlay";
-            shortControllerTimeout = true;
-        } else {
-            methodName = "dispatchPause";
+    private void returnToLibrary() {
+        Intent intent = new Intent(this, FolderBrowserActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        finish();
+    }
+
+    private void updatePlaylistButtons() {
+        if (exoPrev != null) {
+            exoPrev.setEnabled(haveMedia);
+            exoPrev.setAlpha(haveMedia ? 1f : 0.4f);
         }
-        try {
-            final Method method = StyledPlayerControlView.class.getDeclaredMethod(methodName, Player.class);
-            method.setAccessible(true);
-            method.invoke(controlView, (Player) player);
-        } catch (NoSuchMethodException | SecurityException | IllegalAccessException | IllegalArgumentException | InvocationTargetException e) {
-            e.printStackTrace();
+        if (exoNext != null) {
+            boolean available = PlaylistManager.hasNext(mPrefs.mediaUri) || nextUri != null;
+            exoNext.setEnabled(available);
+            exoNext.setAlpha(available ? 1f : 0.4f);
         }
     }
 
     void skipToNext() {
-        if (nextUri != null) {
+        Uri next = PlaylistManager.getNext(mPrefs.mediaUri);
+        if (next == null) {
+            next = nextUri;
+        }
+        if (next != null) {
             releasePlayer();
-            mPrefs.updateMedia(this, nextUri, null);
+            mVideoPath = SubtitleGenerator.resolveRealPath(this, next);
+            mPrefs.updateMedia(this, next, null);
+            mPrefs.updatePosition(0L);
             searchSubtitles();
+            play = true;
             initializePlayer();
+        }
+    }
+
+    void skipToPrevious() {
+        Uri prev = PlaylistManager.getPrevious(mPrefs.mediaUri);
+        if (prev != null) {
+            releasePlayer();
+            mVideoPath = SubtitleGenerator.resolveRealPath(this, prev);
+            mPrefs.updateMedia(this, prev, null);
+            mPrefs.updatePosition(0L);
+            searchSubtitles();
+            play = true;
+            initializePlayer();
+        } else if (player != null) {
+            player.seekTo(0);
         }
     }
 }

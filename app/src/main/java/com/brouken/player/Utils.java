@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import android.provider.Settings;
 import android.util.Log;
 import android.view.Display;
 import android.view.View;
@@ -196,26 +197,44 @@ class Utils {
         }
     }
 
+    public static boolean isAutoRotateOn(final Context context) {
+        try {
+            return Settings.System.getInt(context.getContentResolver(), Settings.System.ACCELEROMETER_ROTATION, 0) == 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static void applyOrientation(Activity activity, boolean portrait) {
+        if (portrait) {
+            if (isAutoRotateOn(activity)) {
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
+            } else {
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+            }
+        } else {
+            if (isAutoRotateOn(activity)) {
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+            } else {
+                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+            }
+        }
+    }
+
     public static void setOrientation(Activity activity, Orientation orientation) {
         switch (orientation) {
             case VIDEO:
                 if (PlayerActivity.player != null) {
                     final Format format = PlayerActivity.player.getVideoFormat();
-                    if (format != null && isPortrait(format))
-                        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT);
-                    else
-                        activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
-                } else {
-                    activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+                    if (format != null) {
+                        applyOrientation(activity, isPortrait(format));
+                        break;
+                    }
                 }
-
                 break;
             case SENSOR:
                 activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR);
                 break;
-            /*case SYSTEM:
-                activity.setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
-                break;*/
         }
     }
 
@@ -229,16 +248,25 @@ class Utils {
         }
     }
 
+    public static boolean isRotated(final int rotationDegrees) {
+        return rotationDegrees == 90 || rotationDegrees == 270;
+    }
+
     public static boolean isRotated(final Format format) {
-        return format.rotationDegrees == 90 || format.rotationDegrees == 270;
+        return format != null && isRotated(format.rotationDegrees);
+    }
+
+    public static boolean isPortrait(int width, int height, int rotationDegrees) {
+        if (isRotated(rotationDegrees)) {
+            return width > height;
+        } else {
+            return height > width;
+        }
     }
 
     public static boolean isPortrait(final Format format) {
-        if (isRotated(format)) {
-            return format.width > format.height;
-        } else {
-            return format.height > format.width;
-        }
+        if (format == null) return false;
+        return isPortrait(format.width, format.height, format.rotationDegrees);
     }
 
     public static String formatMilis(long time) {
