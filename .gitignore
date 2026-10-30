@@ -19,6 +19,7 @@ local.properties
 **/build/
 .gradle/
 tools/model-source/
+tools/appscreen/
 classes.jar
 javap_model.txt
 *.apk
