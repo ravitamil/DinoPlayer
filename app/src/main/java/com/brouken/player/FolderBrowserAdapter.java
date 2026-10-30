@@ -14,9 +14,12 @@ import java.util.Map;
 import androidx.annotation.NonNull;
 import androidx.documentfile.provider.DocumentFile;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.core.content.ContextCompat;
 
 import java.text.DateFormat;
 import java.util.ArrayList;
+import java.util.Set;
+import java.util.LinkedHashSet;
 import java.util.Date;
 import java.util.List;
 
@@ -69,8 +72,10 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
 
     public interface OnItemClickListener {
         void onFolderClick(BrowserItem folderItem);
+        default void onFolderLongClick(BrowserItem folderItem) {}
         void onVideoClick(BrowserItem videoItem);
         void onVideoActions(BrowserItem videoItem);
+        default void onVideoLongClick(BrowserItem videoItem) {}
     }
 
     private final Context context;
@@ -134,6 +139,108 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
                 lastWatched = key;
             }
         }
+    }
+
+    public interface SelectionListener {
+        void onSelectionChanged(int count);
+    }
+
+    private boolean isSelectionMode = false;
+    private final Set<Uri> selectedUris = new LinkedHashSet<>();
+    private SelectionListener selectionListener;
+
+    public void setSelectionListener(SelectionListener listener) {
+        this.selectionListener = listener;
+    }
+
+    public boolean isSelectionMode() {
+        return isSelectionMode;
+    }
+
+    public void setSelectionMode(boolean enabled) {
+        if (this.isSelectionMode != enabled) {
+            this.isSelectionMode = enabled;
+            if (!enabled) {
+                selectedUris.clear();
+                if (selectionListener != null) {
+                    selectionListener.onSelectionChanged(0);
+                }
+            }
+            notifyDataSetChanged();
+        }
+    }
+
+    public void toggleSelection(Uri uri) {
+        if (uri == null) return;
+        if (selectedUris.contains(uri)) {
+            selectedUris.remove(uri);
+        } else {
+            selectedUris.add(uri);
+        }
+        notifyDataSetChanged();
+        if (selectionListener != null) {
+            selectionListener.onSelectionChanged(selectedUris.size());
+        }
+    }
+
+    public int getSelectedCount() {
+        return selectedUris.size();
+    }
+
+    public int getVideoCount() {
+        int count = 0;
+        for (BrowserItem item : items) {
+            if (item.type == BrowserItem.TYPE_VIDEO) count++;
+        }
+        return count;
+    }
+
+    public boolean areAllVideosSelected() {
+        int count = getVideoCount();
+        return count > 0 && selectedUris.size() >= count;
+    }
+
+    public void toggleSelectAllVideos() {
+        if (areAllVideosSelected()) {
+            clearSelection();
+        } else {
+            selectAllVideos();
+        }
+    }
+
+    public void selectAllVideos() {
+        for (BrowserItem item : items) {
+            if (item.type == BrowserItem.TYPE_VIDEO && item.uri != null) {
+                selectedUris.add(item.uri);
+            }
+        }
+        notifyDataSetChanged();
+        if (selectionListener != null) {
+            selectionListener.onSelectionChanged(selectedUris.size());
+        }
+    }
+
+    public void clearSelection() {
+        selectedUris.clear();
+        notifyDataSetChanged();
+        if (selectionListener != null) {
+            selectionListener.onSelectionChanged(0);
+        }
+    }
+
+    public List<Uri> getSelectedUris() {
+        return new ArrayList<>(selectedUris);
+    }
+
+    public List<BrowserItem> getSelectedItems() {
+        List<BrowserItem> result = new ArrayList<>();
+        for (BrowserItem item : items) {
+            Uri videoUri = item.uri != null ? item.uri : (item.file != null ? item.file.getUri() : null);
+            if (videoUri != null && selectedUris.contains(videoUri)) {
+                result.add(item);
+            }
+        }
+        return result;
     }
 
     public List<BrowserItem> getItems() {
@@ -216,10 +323,19 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
                 imageIcon.setAlpha(1.0f);
             }
 
+            itemView.setClickable(true);
+            itemView.setLongClickable(true);
             itemView.setOnClickListener(v -> {
                 if (listener != null) {
                     listener.onFolderClick(item);
                 }
+            });
+            itemView.setOnLongClickListener(v -> {
+                v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                if (listener != null) {
+                    listener.onFolderLongClick(item);
+                }
+                return true;
             });
         }
     }
@@ -229,15 +345,23 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
         private final TextView textInfo;
         private final ImageView imageThumbnail;
         private final TextView textDuration;
+        private final TextView textResolution;
         private final ProgressBar watchProgress;
         private final TextView captionStatus;
+        private final com.google.android.material.card.MaterialCardView cardVideo;
+        private final ImageView imageSelectionCheck;
+        private final View videoActions;
 
         VideoViewHolder(@NonNull View itemView) {
             super(itemView);
+            cardVideo = itemView instanceof com.google.android.material.card.MaterialCardView ? (com.google.android.material.card.MaterialCardView) itemView : null;
+            imageSelectionCheck = itemView.findViewById(R.id.image_selection_check);
+            videoActions = itemView.findViewById(R.id.video_actions);
             textName = itemView.findViewById(R.id.text_video_name);
             textInfo = itemView.findViewById(R.id.text_video_info);
             imageThumbnail = itemView.findViewById(R.id.image_video_thumbnail);
             textDuration = itemView.findViewById(R.id.text_video_duration);
+            textResolution = itemView.findViewById(R.id.text_video_resolution);
             watchProgress = itemView.findViewById(R.id.watch_progress);
             captionStatus=itemView.findViewById(R.id.caption_work_status);
         }
@@ -250,8 +374,72 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
         void bind(BrowserItem item) {
             textName.setText(item.name);
             bindCaption(item);
-            itemView.findViewById(R.id.video_actions).setOnClickListener(v -> listener.onVideoActions(item));
-            itemView.setOnLongClickListener(v -> { listener.onVideoActions(item);return true; });
+
+            Uri videoUri = item.uri != null ? item.uri : (item.file != null ? item.file.getUri() : null);
+            boolean isSelected = videoUri != null && selectedUris.contains(videoUri);
+
+            if (isSelectionMode) {
+                if (imageSelectionCheck != null) {
+                    imageSelectionCheck.setVisibility(View.VISIBLE);
+                    int accentColor = ContextCompat.getColor(context, R.color.player_accent);
+                    if (isSelected) {
+                        imageSelectionCheck.setImageResource(R.drawable.ic_check_circle_24dp);
+                        imageSelectionCheck.setColorFilter(accentColor);
+                    } else {
+                        imageSelectionCheck.setImageResource(R.drawable.ic_check_circle_outline_24dp);
+                        imageSelectionCheck.setColorFilter(0xCCFFFFFF);
+                    }
+                    imageSelectionCheck.setBackgroundResource(R.drawable.circular_control_small_background);
+                }
+                if (cardVideo != null) {
+                    int accentColor = ContextCompat.getColor(context, R.color.player_accent);
+                    int borderColor = ContextCompat.getColor(context, R.color.app_border);
+                    cardVideo.setStrokeColor(isSelected ? accentColor : borderColor);
+                    cardVideo.setStrokeWidth(isSelected ? Utils.dpToPx(2) : Utils.dpToPx(1));
+                    cardVideo.setCardBackgroundColor(isSelected ? 0x223DDC84 : ContextCompat.getColor(context, R.color.app_surface));
+                }
+                if (videoActions != null) {
+                    videoActions.setVisibility(View.GONE);
+                }
+                itemView.setClickable(true);
+                itemView.setLongClickable(true);
+                itemView.setOnClickListener(v -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                    toggleSelection(videoUri);
+                });
+                itemView.setOnLongClickListener(v -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                    toggleSelection(videoUri);
+                    return true;
+                });
+            } else {
+                if (imageSelectionCheck != null) {
+                    imageSelectionCheck.setVisibility(View.GONE);
+                }
+                if (cardVideo != null) {
+                    cardVideo.setStrokeColor(ContextCompat.getColor(context, R.color.app_border));
+                    cardVideo.setStrokeWidth(Utils.dpToPx(1));
+                    cardVideo.setCardBackgroundColor(ContextCompat.getColor(context, R.color.app_surface));
+                }
+                if (videoActions != null) {
+                    videoActions.setVisibility(View.VISIBLE);
+                    videoActions.setOnClickListener(v -> listener.onVideoActions(item));
+                }
+                itemView.setClickable(true);
+                itemView.setLongClickable(true);
+                itemView.setOnLongClickListener(v -> {
+                    v.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+                    if (listener != null) {
+                        listener.onVideoLongClick(item);
+                    }
+                    return true;
+                });
+                itemView.setOnClickListener(v -> {
+                    if (listener != null) {
+                        listener.onVideoClick(item);
+                    }
+                });
+            }
 
             StringBuilder info = new StringBuilder();
             if (item.isHidden) {
@@ -267,15 +455,14 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
                 info.append(dateFormat.format(new Date(item.lastModified)));
             }
 
-            Uri videoUri = item.uri != null ? item.uri : (item.file != null ? item.file.getUri() : null);
             WatchHistory.Entry watched = videoUri == null ? null : history.get(videoUri.toString());
             boolean last = videoUri != null && videoUri.toString().equals(lastWatched);
             boolean completed = watched != null && watched.completed;
-            itemView.setBackgroundResource(last ? R.drawable.library_row_highlight : R.drawable.library_row_background);
             itemView.setAlpha(completed && !last ? 0.70f : 1f);
             imageThumbnail.setAlpha(completed && !last ? 0.65f : 1f);
-            textName.setTextColor(context.getResources().getColor(last ? R.color.player_accent : R.color.app_text));
-            watchProgress.setProgress(watched == null ? 0 : WatchProgress.percent(watched.position, watched.duration, completed));
+            int percent = (watched == null) ? 0 : WatchProgress.percent(watched.position, watched.duration, completed);
+            watchProgress.setProgress(percent);
+            watchProgress.setVisibility(percent > 0 ? View.VISIBLE : View.GONE);
             String accessibility = item.name;
             if (watched != null) {
                 String status = watched.completed ? context.getString(R.string.watched)
@@ -286,17 +473,11 @@ public class FolderBrowserAdapter extends RecyclerView.Adapter<RecyclerView.View
                 accessibility += ", " + status;
             }
             itemView.setContentDescription(accessibility);
-            ThumbnailLoader.getInstance().load(context, videoUri, imageThumbnail, textDuration, textInfo, info.toString(), thumbnailVersion(item));
-
-            itemView.setOnClickListener(v -> {
-                if (listener != null) {
-                    listener.onVideoClick(item);
-                }
-            });
+            ThumbnailLoader.getInstance().load(context, videoUri, imageThumbnail, textDuration, textResolution, textInfo, info.toString(), thumbnailVersion(item));
         }
     }
 
-    private static String thumbnailVersion(BrowserItem item) {
+    public static String thumbnailVersion(BrowserItem item) {
         if (item.folder != null) for (MediaScanner.VideoItem video : item.folder.videos) {
             if (video.uri.equals(item.uri)) return video.size + ":" + video.dateAdded;
         }

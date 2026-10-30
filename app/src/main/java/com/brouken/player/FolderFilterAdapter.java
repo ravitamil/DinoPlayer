@@ -3,6 +3,7 @@ package com.brouken.player;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageButton;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -18,16 +19,32 @@ import java.util.Set;
 
 public class FolderFilterAdapter extends RecyclerView.Adapter<FolderFilterAdapter.ViewHolder> {
 
+    public interface OnItemRemovedListener {
+        void onItemRemoved(String path);
+    }
+
     private final List<String> folderPaths = new ArrayList<>();
     private final Set<String> selectedPaths = new HashSet<>();
+    private final boolean showRemoveButton;
+    private final OnItemRemovedListener removeListener;
 
     public FolderFilterAdapter(List<String> paths, Set<String> initialSelected) {
+        this(paths, initialSelected, false, null);
+    }
+
+    public FolderFilterAdapter(List<String> paths, Set<String> initialSelected, boolean showRemoveButton, OnItemRemovedListener removeListener) {
         if (paths != null) {
-            this.folderPaths.addAll(paths);
+            for (String p : paths) {
+                if (p != null && !this.folderPaths.contains(p)) {
+                    this.folderPaths.add(p);
+                }
+            }
         }
         if (initialSelected != null) {
             this.selectedPaths.addAll(initialSelected);
         }
+        this.showRemoveButton = showRemoveButton;
+        this.removeListener = removeListener;
     }
 
     public Set<String> getSelectedPaths() {
@@ -46,7 +63,7 @@ public class FolderFilterAdapter extends RecyclerView.Adapter<FolderFilterAdapte
     @Override
     public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_dialog_folder_filter, parent, false);
+                .inflate(R.layout.item_sheet_folder, parent, false);
         return new ViewHolder(view);
     }
 
@@ -65,12 +82,14 @@ public class FolderFilterAdapter extends RecyclerView.Adapter<FolderFilterAdapte
         private final MaterialCheckBox checkBox;
         private final TextView textName;
         private final TextView textPath;
+        private final ImageButton buttonRemove;
 
         ViewHolder(@NonNull View itemView) {
             super(itemView);
             checkBox = itemView.findViewById(R.id.checkbox_folder);
             textName = itemView.findViewById(R.id.text_folder_name);
             textPath = itemView.findViewById(R.id.text_folder_path);
+            buttonRemove = itemView.findViewById(R.id.button_remove_folder);
         }
 
         void bind(String path) {
@@ -90,6 +109,7 @@ public class FolderFilterAdapter extends RecyclerView.Adapter<FolderFilterAdapte
                     break;
                 }
             }
+            checkBox.setOnCheckedChangeListener(null);
             checkBox.setChecked(isChecked);
 
             checkBox.setOnCheckedChangeListener((buttonView, checked) -> {
@@ -107,6 +127,28 @@ public class FolderFilterAdapter extends RecyclerView.Adapter<FolderFilterAdapte
             });
 
             itemView.setOnClickListener(v -> checkBox.toggle());
+
+            if (buttonRemove != null) {
+                buttonRemove.setVisibility(showRemoveButton ? View.VISIBLE : View.GONE);
+                buttonRemove.setOnClickListener(v -> {
+                    int pos = getAdapterPosition();
+                    if (pos != RecyclerView.NO_POSITION && pos < folderPaths.size()) {
+                        String removed = folderPaths.remove(pos);
+                        String normRemoved = Prefs.normalizeFolderPath(removed);
+                        Set<String> toRemove = new HashSet<>();
+                        for (String s : selectedPaths) {
+                            if (Prefs.normalizeFolderPath(s).equals(normRemoved)) {
+                                toRemove.add(s);
+                            }
+                        }
+                        selectedPaths.removeAll(toRemove);
+                        notifyItemRemoved(pos);
+                        if (removeListener != null) {
+                            removeListener.onItemRemoved(removed);
+                        }
+                    }
+                });
+            }
         }
     }
 }

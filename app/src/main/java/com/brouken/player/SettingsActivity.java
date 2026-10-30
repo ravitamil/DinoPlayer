@@ -9,9 +9,12 @@ import android.os.Environment;
 import android.provider.Settings;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
+import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
@@ -20,6 +23,9 @@ import androidx.documentfile.provider.DocumentFile;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.button.MaterialButton;
+import com.google.android.material.radiobutton.MaterialRadioButton;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 
 import java.io.File;
@@ -125,6 +131,20 @@ public class SettingsActivity extends AppCompatActivity {
         switchAutoPlayNext.setChecked(mPrefs.autoPlayNext);
         switchLiveCaptions.setChecked(mPrefs.liveCaptions);
 
+        SwitchMaterial switchCaptionTranslate = findViewById(R.id.switch_caption_translate);
+        if (switchCaptionTranslate != null) {
+            switchCaptionTranslate.setChecked(mPrefs.captionTranslate);
+            switchCaptionTranslate.setOnCheckedChangeListener((btn, isChecked) -> {
+                mPrefs.updateCaptionTranslate(isChecked);
+                updateSummaries();
+                setResult(RESULT_OK);
+            });
+        }
+        View rowCaptionTranslate = findViewById(R.id.row_caption_translate);
+        if (rowCaptionTranslate != null && switchCaptionTranslate != null) {
+            rowCaptionTranslate.setOnClickListener(v -> switchCaptionTranslate.toggle());
+        }
+
         updateSummaries();
 
         // Row click listeners
@@ -153,7 +173,7 @@ public class SettingsActivity extends AppCompatActivity {
         findViewById(R.id.row_live_captions).setOnClickListener(v -> switchLiveCaptions.toggle());
         switchLiveCaptions.setOnCheckedChangeListener((buttonView, isChecked) -> {
             mPrefs.updateLiveCaptions(isChecked);
-            Toast.makeText(this, isChecked ? "Live speech subtitles enabled" : "Live speech subtitles disabled", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, isChecked ? "Subtitles while watching enabled" : "Subtitles while watching disabled", Toast.LENGTH_SHORT).show();
         });
 
         findViewById(R.id.button_rescan_library).setOnClickListener(v -> {
@@ -179,7 +199,7 @@ public class SettingsActivity extends AppCompatActivity {
         toggle.setMinHeight(Utils.dpToPx(56));toggle.setChecked(CaptionAutoJobs.enabled(this));
         rows.addView(toggle,0);
         TextView hint=new TextView(this);hint.setTextSize(14);
-        hint.setText("Off by default. Uses the selected offline pack. Existing videos are skipped. New videos queue in the background; playback takes priority. Android may defer background work.");
+        hint.setText("Automatically generate subtitles for new videos in the background using on-device AI.");
         rows.addView(hint,1);
         toggle.setOnCheckedChangeListener((button,on) -> {
             CaptionAutoJobs.setEnabled(this,on);
@@ -190,19 +210,63 @@ public class SettingsActivity extends AppCompatActivity {
         });
     }
 
+    private static class LanguageOption {
+        final String code;
+        final String name;
+        final String subtitle;
+        final String badge;
+        final boolean isAuto;
+
+        LanguageOption(String code, String name, String subtitle, String badge, boolean isAuto) {
+            this.code = code;
+            this.name = name;
+            this.subtitle = subtitle;
+            this.badge = badge;
+            this.isAuto = isAuto;
+        }
+    }
+
+    private String getLanguageDisplayName(String code) {
+        if (code == null || "auto".equalsIgnoreCase(code) || code.isEmpty()) {
+            return "Auto-detect (99 languages)";
+        }
+        switch (code.toLowerCase()) {
+            case "en": return "English";
+            case "hi": return "Hindi (हिन्दी)";
+            case "es": return "Spanish (Español)";
+            case "fr": return "French (Français)";
+            case "de": return "German (Deutsch)";
+            case "ja": return "Japanese (日本語)";
+            case "ko": return "Korean (한국어)";
+            case "zh": return "Chinese (中文)";
+            case "ar": return "Arabic (العربية)";
+            case "pt": return "Portuguese (Português)";
+            case "ru": return "Russian (Русский)";
+            case "ta": return "Tamil (தமிழ்)";
+            case "te": return "Telugu (తెలుగు)";
+            case "bn": return "Bengali (বাংলা)";
+            default: return code.toUpperCase();
+        }
+    }
+
     private void updateSummaries() {
-        CaptionPack pack = CaptionPackages.get(this).selected();
-        ((TextView)findViewById(R.id.text_caption_language)).setText(pack == CaptionPack.HINDI
-                ? "Hindi audio → English · Experimental" : "English audio → English");
+        String langDisplay = getLanguageDisplayName(mPrefs.captionLanguage);
+        if (mPrefs.captionTranslate) {
+            langDisplay = langDisplay + " → English";
+        }
+        TextView textLang = findViewById(R.id.text_caption_language);
+        if (textLang != null) {
+            textLang.setText(langDisplay);
+        }
         if (mPrefs.scanOnlyIncluded) {
-            textScanModeSummary.setText("Scan only included folders");
+            textScanModeSummary.setText("Selected folders only");
         } else {
-            textScanModeSummary.setText("Scan all device folders (except excluded)");
+            textScanModeSummary.setText("All device folders");
         }
 
         int incCount = mPrefs.includedFolders.size();
         if (incCount == 0) {
-            textIncludedFoldersSummary.setText("None configured • Tap to add folders");
+            textIncludedFoldersSummary.setText("No folders selected • Tap to add");
         } else {
             StringBuilder sb = new StringBuilder();
             sb.append(incCount).append(incCount == 1 ? " folder included: " : " folders included: ");
@@ -221,7 +285,7 @@ public class SettingsActivity extends AppCompatActivity {
 
         int excCount = mPrefs.excludedFolders.size();
         if (excCount == 0) {
-            textExcludedFoldersSummary.setText("None • All device folders are scanned");
+            textExcludedFoldersSummary.setText("None • All device folders scanned");
         } else {
             textExcludedFoldersSummary.setText(excCount + (excCount == 1 ? " folder excluded" : " folders excluded"));
         }
@@ -229,15 +293,95 @@ public class SettingsActivity extends AppCompatActivity {
 
     private void initCaptionPackages() {
         findViewById(R.id.row_caption_language).setOnClickListener(view -> {
-            CaptionPackages manager = CaptionPackages.get(this);
-            new AlertDialog.Builder(this).setTitle("Audio & captions")
-                    .setSingleChoiceItems(new String[]{"English audio → English", "Hindi audio → English (experimental)"},
-                            manager.selected() == CaptionPack.HINDI ? 1 : 0, (dialog, which) -> {
-                                manager.select(which == 1 ? CaptionPack.HINDI : CaptionPack.ENGLISH);
-                                updateSummaries();
-                                setResult(RESULT_OK);
-                                dialog.dismiss();
-                            }).setNegativeButton(android.R.string.cancel, null).show();
+            BottomSheetDialog sheetDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+            View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_subtitle_language, null);
+            sheetDialog.setContentView(sheet);
+            sheetDialog.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+
+            SwitchMaterial sheetSwitchTranslate = sheet.findViewById(R.id.switch_sheet_translate);
+            SwitchMaterial mainSwitchTranslate = findViewById(R.id.switch_caption_translate);
+            if (sheetSwitchTranslate != null) {
+                sheetSwitchTranslate.setChecked(mPrefs.captionTranslate);
+                sheetSwitchTranslate.setOnCheckedChangeListener((btn, checked) -> {
+                    mPrefs.updateCaptionTranslate(checked);
+                    if (mainSwitchTranslate != null) mainSwitchTranslate.setChecked(checked);
+                    updateSummaries();
+                    setResult(RESULT_OK);
+                });
+                View rowSheetTranslate = sheet.findViewById(R.id.row_sheet_translate);
+                if (rowSheetTranslate != null) {
+                    rowSheetTranslate.setOnClickListener(v -> sheetSwitchTranslate.toggle());
+                }
+            }
+
+            RecyclerView recycler = sheet.findViewById(R.id.recycler_sheet_languages);
+            recycler.setLayoutManager(new LinearLayoutManager(this));
+
+            List<LanguageOption> options = new ArrayList<>();
+            options.add(new LanguageOption("auto", "Auto-detect language (Recommended)", "Automatically detects speech across 99 languages", "", true));
+            options.add(new LanguageOption("en", "English", "English speech transcription", "EN", false));
+            options.add(new LanguageOption("hi", "Hindi (हिन्दी)", "Hindi speech transcription", "HI", false));
+            options.add(new LanguageOption("es", "Spanish (Español)", "Spanish speech transcription", "ES", false));
+            options.add(new LanguageOption("fr", "French (Français)", "French speech transcription", "FR", false));
+            options.add(new LanguageOption("de", "German (Deutsch)", "German speech transcription", "DE", false));
+            options.add(new LanguageOption("ja", "Japanese (日本語)", "Japanese speech transcription", "JA", false));
+            options.add(new LanguageOption("ko", "Korean (한국어)", "Korean speech transcription", "KO", false));
+            options.add(new LanguageOption("zh", "Chinese (中文)", "Mandarin Chinese speech transcription", "ZH", false));
+            options.add(new LanguageOption("ar", "Arabic (العربية)", "Arabic speech transcription", "AR", false));
+            options.add(new LanguageOption("pt", "Portuguese (Português)", "Portuguese speech transcription", "PT", false));
+            options.add(new LanguageOption("ru", "Russian (Русский)", "Russian speech transcription", "RU", false));
+            options.add(new LanguageOption("ta", "Tamil (தமிழ்)", "Tamil speech transcription", "TA", false));
+            options.add(new LanguageOption("te", "Telugu (తెలుగు)", "Telugu speech transcription", "TE", false));
+            options.add(new LanguageOption("bn", "Bengali (বাংলা)", "Bengali speech transcription", "BN", false));
+
+            recycler.setAdapter(new RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+                @NonNull
+                @Override
+                public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+                    View v = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_sheet_language, parent, false);
+                    return new RecyclerView.ViewHolder(v) {};
+                }
+
+                @Override
+                public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+                    LanguageOption opt = options.get(position);
+                    TextView textTitle = holder.itemView.findViewById(R.id.text_lang_title);
+                    TextView textSub = holder.itemView.findViewById(R.id.text_lang_subtitle);
+                    TextView textBadge = holder.itemView.findViewById(R.id.text_lang_badge);
+                    ImageView imageAuto = holder.itemView.findViewById(R.id.image_lang_auto_icon);
+                    MaterialRadioButton radio = holder.itemView.findViewById(R.id.radio_lang_selected);
+
+                    textTitle.setText(opt.name);
+                    textSub.setText(opt.subtitle);
+
+                    if (opt.isAuto) {
+                        textBadge.setVisibility(View.GONE);
+                        imageAuto.setVisibility(View.VISIBLE);
+                    } else {
+                        textBadge.setVisibility(View.VISIBLE);
+                        imageAuto.setVisibility(View.GONE);
+                        textBadge.setText(opt.badge);
+                    }
+
+                    boolean isSelected = opt.code.equalsIgnoreCase(mPrefs.captionLanguage);
+                    radio.setChecked(isSelected);
+
+                    holder.itemView.setOnClickListener(v -> {
+                        mPrefs.updateCaptionLanguage(opt.code);
+                        updateSummaries();
+                        setResult(RESULT_OK);
+                        notifyDataSetChanged();
+                        sheet.postDelayed(sheetDialog::dismiss, 120);
+                    });
+                }
+
+                @Override
+                public int getItemCount() {
+                    return options.size();
+                }
+            });
+
+            sheetDialog.show();
         });
         android.widget.LinearLayout rows = findViewById(R.id.caption_pack_rows);
         int padding = Utils.dpToPx(16);
@@ -272,8 +416,8 @@ public class SettingsActivity extends AppCompatActivity {
         }
         findViewById(R.id.button_clear_cache).setOnClickListener(view -> {
             if (cacheClearing) return;
-            new AlertDialog.Builder(this).setTitle("Clear preview and caption cache?")
-                    .setMessage("Your videos, watch history and installed subtitle packs will stay. Captions will be generated again when needed.")
+            new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle("Clear cache?")
+                    .setMessage("Your videos, watch history, and installed subtitle packs will not be affected. Cached thumbnails and subtitles will be cleared.")
                     .setPositiveButton("Clear cache", (dialog, which) -> {
                         cacheClearing = true;
                         view.setEnabled(false);
@@ -281,7 +425,7 @@ public class SettingsActivity extends AppCompatActivity {
                             cacheClearing = false;
                             if (!isDestroyed()) {
                                 view.setEnabled(true);
-                                Toast.makeText(this, "Preview and caption cache cleared", Toast.LENGTH_SHORT).show();
+                                Toast.makeText(this, "Cache cleared", Toast.LENGTH_SHORT).show();
                             }
                         }));
                     }).setNegativeButton(android.R.string.cancel, null).show();
@@ -295,7 +439,7 @@ public class SettingsActivity extends AppCompatActivity {
             Toast.makeText(this, "Please wait for verification to finish", Toast.LENGTH_SHORT).show();
         } else if (state.downloading || state.installed) {
             String action = state.installed ? "Remove package" : "Cancel download";
-            new AlertDialog.Builder(this).setTitle(pack.title).setMessage(state.installed
+            new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle(pack.title).setMessage(state.installed
                     ? "Remove this offline pack? Your videos and watch history will stay." : "Cancel this download? You can download it again later.")
                     .setPositiveButton(action, (dialog, which) -> {
                         try { if (state.installed) manager.remove(pack); else manager.cancel(pack); }
@@ -303,7 +447,7 @@ public class SettingsActivity extends AppCompatActivity {
                     }).setNegativeButton(android.R.string.cancel,null).show();
         } else {
             final boolean[] mobileData = {false};
-            new AlertDialog.Builder(this).setTitle("Download " + pack.title + "?")
+            new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle("Download " + pack.title + "?")
                     .setMultiChoiceItems(new String[]{"Allow mobile data (" + pack.downloadBytes()/1000000 + " MB)"},
                             new boolean[]{false}, (dialog, which, checked) -> mobileData[0] = checked)
                     .setPositiveButton("Download", (dialog, which) -> {
@@ -327,104 +471,168 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void showScanModeDialog() {
-        String[] options = new String[]{
-                "Scan all device folders (except excluded)",
-                "Scan only included folders"
-        };
-        int selectedIndex = mPrefs.scanOnlyIncluded ? 1 : 0;
+        BottomSheetDialog sheetDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_scan_mode, null);
+        sheetDialog.setContentView(sheet);
+        sheetDialog.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
 
-        new AlertDialog.Builder(this)
-                .setTitle("Scanning Mode")
-                .setSingleChoiceItems(options, selectedIndex, (dialog, which) -> {
-                    boolean isIncluded = (which == 1);
-                    mPrefs.updateScanOnlyIncluded(isIncluded);
-                    updateSummaries();
-                    setResult(RESULT_OK);
-                    dialog.dismiss();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        View optionAll = sheet.findViewById(R.id.option_scan_all);
+        View optionIncluded = sheet.findViewById(R.id.option_scan_included);
+        MaterialRadioButton radioAll = sheet.findViewById(R.id.radio_scan_all);
+        MaterialRadioButton radioIncluded = sheet.findViewById(R.id.radio_scan_included);
+
+        boolean isOnlyIncluded = mPrefs.scanOnlyIncluded;
+        radioAll.setChecked(!isOnlyIncluded);
+        radioIncluded.setChecked(isOnlyIncluded);
+
+        optionAll.setOnClickListener(v -> {
+            radioAll.setChecked(true);
+            radioIncluded.setChecked(false);
+            mPrefs.updateScanOnlyIncluded(false);
+            updateSummaries();
+            setResult(RESULT_OK);
+            sheet.postDelayed(sheetDialog::dismiss, 150);
+        });
+
+        optionIncluded.setOnClickListener(v -> {
+            radioAll.setChecked(false);
+            radioIncluded.setChecked(true);
+            mPrefs.updateScanOnlyIncluded(true);
+            updateSummaries();
+            setResult(RESULT_OK);
+            sheet.postDelayed(sheetDialog::dismiss, 150);
+        });
+
+        sheetDialog.show();
     }
 
     private void showIncludedFoldersDialog() {
-        List<String> items = new ArrayList<>(mPrefs.includedFolders);
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Included Folders");
-
-        if (items.isEmpty()) {
-            builder.setMessage("No folders in the inclusion list.\n\nTap 'Add Folder' to select a folder from storage.");
-        } else {
-            CharSequence[] displayNames = new CharSequence[items.size()];
-            for (int i = 0; i < items.size(); i++) {
-                displayNames[i] = items.get(i);
+        List<String> allFolders = new ArrayList<>();
+        for (String inc : mPrefs.includedFolders) {
+            if (!allFolders.contains(inc)) {
+                allFolders.add(inc);
             }
-            builder.setItems(displayNames, (dialog, which) -> {
-                String folderToRemove = items.get(which);
-                new AlertDialog.Builder(this)
-                        .setTitle("Remove Folder")
-                        .setMessage("Remove \"" + folderToRemove + "\" from included scan list?")
-                        .setPositiveButton("Remove", (d, w) -> {
-                            Set<String> updated = new HashSet<>(mPrefs.includedFolders);
-                            updated.remove(folderToRemove);
-                            mPrefs.updateIncludedFolders(updated);
-                            updateSummaries();
-                            setResult(RESULT_OK);
-                            Toast.makeText(this, "Folder removed", Toast.LENGTH_SHORT).show();
-                        })
-                        .setNegativeButton(android.R.string.cancel, null)
-                        .show();
-            });
+        }
+        for (String disc : mDiscoveredFolders) {
+            if (!allFolders.contains(disc)) {
+                allFolders.add(disc);
+            }
         }
 
-        builder.setPositiveButton("Add Folder", (dialog, which) -> launchAddFolderPicker());
-        builder.setNegativeButton("Close", null);
-        builder.show();
+        BottomSheetDialog sheetDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_folder_manager, null);
+        sheetDialog.setContentView(sheet);
+        sheetDialog.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+        sheetDialog.getBehavior().setSkipCollapsed(true);
+
+        TextView textTitle = sheet.findViewById(R.id.text_sheet_folder_title);
+        TextView textSubtitle = sheet.findViewById(R.id.text_sheet_folder_subtitle);
+        View emptyState = sheet.findViewById(R.id.container_empty_state);
+        RecyclerView recycler = sheet.findViewById(R.id.recycler_sheet_folders);
+        MaterialButton buttonAdd = sheet.findViewById(R.id.button_add_folder);
+        MaterialButton buttonApply = sheet.findViewById(R.id.button_apply_folders);
+
+        textTitle.setText("Included Folders");
+        textSubtitle.setText("Check folders to scan in your video library");
+
+        recycler.setLayoutManager(new LinearLayoutManager(this));
+
+        FolderFilterAdapter filterAdapter = new FolderFilterAdapter(allFolders, mPrefs.includedFolders, true, removedPath -> {
+            Set<String> updated = new HashSet<>(mPrefs.includedFolders);
+            updated.remove(removedPath);
+            mPrefs.updateIncludedFolders(updated);
+            updateSummaries();
+            setResult(RESULT_OK);
+            if (recycler.getAdapter() != null && recycler.getAdapter().getItemCount() == 0) {
+                emptyState.setVisibility(View.VISIBLE);
+                recycler.setVisibility(View.GONE);
+            }
+        });
+        recycler.setAdapter(filterAdapter);
+
+        if (allFolders.isEmpty()) {
+            emptyState.setVisibility(View.VISIBLE);
+            recycler.setVisibility(View.GONE);
+        } else {
+            emptyState.setVisibility(View.GONE);
+            recycler.setVisibility(View.VISIBLE);
+        }
+
+        buttonAdd.setOnClickListener(v -> {
+            mPrefs.updateIncludedFolders(filterAdapter.getSelectedPaths());
+            sheetDialog.dismiss();
+            launchAddFolderPicker();
+        });
+
+        buttonApply.setOnClickListener(v -> {
+            mPrefs.updateIncludedFolders(filterAdapter.getSelectedPaths());
+            updateSummaries();
+            setResult(RESULT_OK);
+            Toast.makeText(this, "Included folders updated", Toast.LENGTH_SHORT).show();
+            sheetDialog.dismiss();
+        });
+
+        sheetDialog.show();
     }
 
     private void showExcludedFoldersDialog() {
-        View dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_folder_filters, null);
-        dialogView.findViewById(R.id.radio_group_filter_mode).setVisibility(View.GONE);
-        dialogView.findViewById(R.id.check_filter_show_hidden).setVisibility(View.GONE);
+        BottomSheetDialog sheetDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_folder_manager, null);
+        sheetDialog.setContentView(sheet);
+        sheetDialog.getBehavior().setState(com.google.android.material.bottomsheet.BottomSheetBehavior.STATE_EXPANDED);
+        sheetDialog.getBehavior().setSkipCollapsed(true);
 
-        TextView textSectionTitle = dialogView.findViewById(R.id.text_filter_section_title);
-        textSectionTitle.setText("Check folders you want to exclude from scanning:");
+        TextView textTitle = sheet.findViewById(R.id.text_sheet_folder_title);
+        TextView textSubtitle = sheet.findViewById(R.id.text_sheet_folder_subtitle);
+        View emptyState = sheet.findViewById(R.id.container_empty_state);
+        RecyclerView recycler = sheet.findViewById(R.id.recycler_sheet_folders);
+        MaterialButton buttonAdd = sheet.findViewById(R.id.button_add_folder);
+        MaterialButton buttonApply = sheet.findViewById(R.id.button_apply_folders);
 
-        RecyclerView recyclerFolders = dialogView.findViewById(R.id.recycler_filter_folders);
-        recyclerFolders.setLayoutManager(new LinearLayoutManager(this));
+        textTitle.setText("Excluded Folders");
+        textSubtitle.setText("Check folders you want to hide from scanning");
+        buttonAdd.setVisibility(View.GONE);
+
+        recycler.setLayoutManager(new LinearLayoutManager(this));
 
         FolderFilterAdapter filterAdapter = new FolderFilterAdapter(mDiscoveredFolders, mPrefs.excludedFolders);
-        recyclerFolders.setAdapter(filterAdapter);
+        recycler.setAdapter(filterAdapter);
 
-        new AlertDialog.Builder(this)
-                .setTitle("Excluded Folders")
-                .setView(dialogView)
-                .setPositiveButton("Apply", (dialog, which) -> {
-                    mPrefs.updateExcludedFolders(filterAdapter.getSelectedPaths());
-                    updateSummaries();
-                    setResult(RESULT_OK);
-                    Toast.makeText(this, "Excluded folders updated", Toast.LENGTH_SHORT).show();
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
+        if (mDiscoveredFolders.isEmpty()) {
+            emptyState.setVisibility(View.VISIBLE);
+            recycler.setVisibility(View.GONE);
+        } else {
+            emptyState.setVisibility(View.GONE);
+            recycler.setVisibility(View.VISIBLE);
+        }
+
+        buttonApply.setOnClickListener(v -> {
+            mPrefs.updateExcludedFolders(filterAdapter.getSelectedPaths());
+            updateSummaries();
+            setResult(RESULT_OK);
+            Toast.makeText(this, "Excluded folders updated", Toast.LENGTH_SHORT).show();
+            sheetDialog.dismiss();
+        });
+
+        sheetDialog.show();
     }
 
     private void updateStoragePermissionStatus() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             boolean hasAllFiles = Environment.isExternalStorageManager();
             if (hasAllFiles) {
-                textManageStorageStatus.setText("Full access granted • Can scan .hidden and dot folders");
+                textManageStorageStatus.setText("Storage access granted");
                 textManageStorageStatus.setTextColor(0xFF81C784);
                 textManageStorageAction.setText("ALLOWED");
                 textManageStorageAction.setTextColor(0xFF81C784);
             } else {
-                textManageStorageStatus.setText("Required on Android 11+ to scan .hidden folders");
+                textManageStorageStatus.setText("Permission needed to scan all folders");
                 textManageStorageStatus.setTextColor(0xFFFFA726);
                 textManageStorageAction.setText("GRANT");
                 textManageStorageAction.setTextColor(0xFF3DDC84);
             }
         } else {
-            textManageStorageStatus.setText("Granted via runtime storage permission");
+            textManageStorageStatus.setText("Media storage access granted");
             textManageStorageStatus.setTextColor(0xFF81C784);
             textManageStorageAction.setText("OK");
             textManageStorageAction.setTextColor(0xFF81C784);
@@ -432,9 +640,9 @@ public class SettingsActivity extends AppCompatActivity {
     }
 
     private void showAllFilesAccessRationale() {
-        new AlertDialog.Builder(this)
-                .setTitle("All Files Access Required")
-                .setMessage("Android 11+ restricts access to .hidden directories and non-media folders. To index videos in .hidden folders, please enable 'All files access' for Just Player.")
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+                .setTitle("Storage Access")
+                .setMessage("To find videos in hidden and protected folders, please enable 'All files access' for Just Player in system settings.")
                 .setPositiveButton("Open Settings", (dialog, which) -> openAllFilesAccessSettings())
                 .setNegativeButton("Cancel", null)
                 .show();

@@ -4,7 +4,7 @@ import android.content.Context;
 import android.view.View;
 import android.widget.*;
 import androidx.appcompat.app.AlertDialog;
-import com.google.android.exoplayer2.ui.SubtitleView;
+import androidx.media3.ui.SubtitleView;
 import com.google.android.material.switchmaterial.SwitchMaterial;
 import java.util.Collections;
 
@@ -81,18 +81,18 @@ public final class SubtitleAppearanceSettings {
         binding=false;
     }
     private void chooseSize() {
-        new AlertDialog.Builder(context).setTitle(R.string.subtitle_text_size).setSingleChoiceItems(R.array.subtitle_sizes,value.size,(dialog,index)-> {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(context).setTitle(R.string.subtitle_text_size).setSingleChoiceItems(R.array.subtitle_sizes,value.size,(dialog,index)-> {
             update(new SubtitleStyleOptions(value.useAndroid,index,value.color,value.opacity,value.outline,value.bottom));dialog.dismiss();
         }).setNegativeButton(android.R.string.cancel,null).show();
     }
     private void chooseColor() {
-        new AlertDialog.Builder(context).setTitle(R.string.subtitle_text_color).setSingleChoiceItems(R.array.subtitle_colors,value.color,(dialog,index)-> {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(context).setTitle(R.string.subtitle_text_color).setSingleChoiceItems(R.array.subtitle_colors,value.color,(dialog,index)-> {
             update(new SubtitleStyleOptions(value.useAndroid,value.size,index,value.opacity,value.outline,value.bottom));dialog.dismiss();
         }).setNegativeButton(android.R.string.cancel,null).show();
     }
     private void show() {
         ScrollView scroll=new ScrollView(context);scroll.setFillViewport(false);scroll.addView(content);
-        AlertDialog dialog=new AlertDialog.Builder(context).setTitle(R.string.subtitle_appearance).setView(scroll)
+        AlertDialog dialog=new com.google.android.material.dialog.MaterialAlertDialogBuilder(context).setTitle(R.string.subtitle_appearance).setView(scroll)
                 .setPositiveButton(R.string.subtitle_done,null).setNeutralButton(R.string.subtitle_reset,null).create();
         dialog.setOnShowListener(ignored->dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v->update(SubtitleStyleOptions.defaults())));
         dialog.show();

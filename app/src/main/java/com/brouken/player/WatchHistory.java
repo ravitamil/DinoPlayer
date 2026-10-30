@@ -1,72 +1,68 @@
 package com.brouken.player;
 
 import android.content.Context;
-import android.content.SharedPreferences;
 import android.net.Uri;
-import org.json.JSONObject;
+
+import com.brouken.player.data.db.AppDatabase;
+import com.brouken.player.data.db.WatchProgressDao;
+import com.brouken.player.data.db.WatchProgressEntity;
+
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
-/** Local playback history, independent of the current resume-position preference. */
+/** Local playback history backed by Room database. */
 public final class WatchHistory {
     public static final class Entry {
         public long position, duration, updated;
         public boolean completed;
     }
 
-    private final SharedPreferences preferences;
+    private final WatchProgressDao dao;
 
     public WatchHistory(Context context) {
-        preferences = context.getSharedPreferences("watch_history", Context.MODE_PRIVATE);
+        dao = AppDatabase.getInstance(context).watchProgressDao();
     }
 
     public Map<String, Entry> snapshot() {
         Map<String, Entry> result = new HashMap<>();
-        for (Map.Entry<String, ?> item : preferences.getAll().entrySet()) {
-            if (!(item.getValue() instanceof String)) continue;
-            try {
-                JSONObject json = new JSONObject((String) item.getValue());
-                Entry entry = new Entry();
-                entry.position = json.optLong("position");
-                entry.duration = json.optLong("duration");
-                entry.updated = json.optLong("updated");
-                entry.completed = json.optBoolean("completed");
-                result.put(item.getKey(), entry);
-            } catch (Exception ignored) {
-                // An invalid history entry must not prevent library browsing.
-            }
+        List<WatchProgressEntity> all = dao.getAll();
+        for (WatchProgressEntity entity : all) {
+            Entry entry = new Entry();
+            entry.position = entity.positionMs;
+            entry.duration = entity.durationMs;
+            entry.updated = entity.updatedAt;
+            entry.completed = entity.completed;
+            result.put(entity.mediaUri, entry);
         }
         return result;
     }
 
     public Entry latest(Uri uri) {
         if (uri == null) return null;
-        try {
-            JSONObject json = new JSONObject(preferences.getString(uri.toString(), "{}"));
-            Entry entry = new Entry();
-            entry.position = json.optLong("position");
-            entry.duration = json.optLong("duration");
-            entry.updated = json.optLong("updated");
-            entry.completed = json.optBoolean("completed");
-            return entry.duration > 0 ? entry : null;
-        } catch (Exception ignored) { return null; }
+        WatchProgressEntity entity = dao.get(uri.toString());
+        if (entity == null || entity.durationMs <= 0) return null;
+        Entry entry = new Entry();
+        entry.position = entity.positionMs;
+        entry.duration = entity.durationMs;
+        entry.updated = entity.updatedAt;
+        entry.completed = entity.completed;
+        return entry;
     }
 
-    public void forget(Uri uri) { preferences.edit().remove(uri.toString()).apply(); }
+    public void forget(Uri uri) {
+        if (uri == null) return;
+        dao.delete(uri.toString());
+    }
 
     public void record(Uri uri, long position, long duration, boolean ended) {
         if (uri == null || duration <= 0 || position < 0 || (!ended && position == 0)) return;
         String key = uri.toString();
-        try {
-            JSONObject previous = new JSONObject(preferences.getString(key, "{}"));
-            JSONObject json = new JSONObject();
-            json.put("position", Math.min(position, duration));
-            json.put("duration", duration);
-            json.put("completed", ended || previous.optBoolean("completed"));
-            json.put("updated", System.currentTimeMillis());
-            preferences.edit().putString(key, json.toString()).apply();
-        } catch (Exception ignored) {
-            // Playback continues when history cannot be saved.
-        }
+        WatchProgressEntity existing = dao.get(key);
+        boolean completed = ended || (existing != null && existing.completed);
+        long pos = Math.min(position, duration);
+        long now = System.currentTimeMillis();
+        WatchProgressEntity entity = new WatchProgressEntity(key, pos, duration, completed, now);
+        dao.upsert(entity);
     }
 }

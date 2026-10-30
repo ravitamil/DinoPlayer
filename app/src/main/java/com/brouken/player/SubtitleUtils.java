@@ -5,7 +5,7 @@ import android.net.Uri;
 
 import androidx.documentfile.provider.DocumentFile;
 
-import com.google.android.exoplayer2.util.MimeTypes;
+import androidx.media3.common.MimeTypes;
 import com.ibm.icu.text.CharsetDetector;
 import com.ibm.icu.text.CharsetMatch;
 
@@ -19,6 +19,37 @@ import java.util.Arrays;
 import java.util.List;
 
 class SubtitleUtils {
+
+    public static String getMimeTypeAbbreviation(String mime) {
+        if (mime == null) return "SUB";
+        if (mime.contains("subrip") || mime.contains("x-subrip")) return "SRT";
+        if (mime.contains("ssa") || mime.contains("ass")) return "ASS";
+        if (mime.contains("vtt")) return "VTT";
+        if (mime.contains("pgs")) return "PGS";
+        if (mime.contains("ttml")) return "TTML";
+        if (mime.contains("dvbsub") || mime.contains("vobsub")) return "VOB";
+        return "SUB";
+    }
+
+    public static String getFileName(Context context, Uri uri) {
+        if (uri == null) return "";
+        if ("file".equals(uri.getScheme())) {
+            return new File(uri.getPath()).getName();
+        }
+        DocumentFile doc = DocumentFile.fromSingleUri(context, uri);
+        if (doc != null && doc.getName() != null) {
+            return doc.getName();
+        }
+        String path = uri.getPath();
+        if (path != null) {
+            int idx = path.lastIndexOf('/');
+            if (idx >= 0 && idx < path.length() - 1) {
+                return path.substring(idx + 1);
+            }
+        }
+        return uri.getLastPathSegment() != null ? uri.getLastPathSegment() : uri.toString();
+    }
+
 
     public static String getSubtitleMime(Uri uri) {
         final String path = uri.getPath();

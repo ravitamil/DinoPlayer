@@ -1,2 +1,2 @@
-include ':app', ':doubletapplayerview'
+include ':app'
 rootProject.name = "Player"

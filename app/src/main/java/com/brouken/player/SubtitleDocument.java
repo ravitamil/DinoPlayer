@@ -67,10 +67,15 @@ public final class SubtitleDocument {
         } catch(NumberFormatException e) { throw new IOException("Invalid caption time",e); }
     }
     public static void validate(List<SubtitleTimeline.Cue> cues) throws IOException {
-        long previousEnd=0;
-        for(SubtitleTimeline.Cue cue:cues) {
-            if(cue.startMs<previousEnd)throw new IOException("Captions cannot overlap; adjust the neighbouring times");
-            previousEnd=cue.endMs;
+        long previousStart = -1;
+        for (SubtitleTimeline.Cue cue : cues) {
+            if (cue.startMs < 0 || cue.endMs <= cue.startMs) {
+                throw new IOException("Caption end must follow its start");
+            }
+            if (cue.startMs < previousStart) {
+                throw new IOException("Captions must be sorted by start time");
+            }
+            previousStart = cue.startMs;
         }
     }
     public static List<SubtitleTimeline.Cue> shifted(List<SubtitleTimeline.Cue> cues,long offset) throws IOException {

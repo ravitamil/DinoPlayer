@@ -6,9 +6,9 @@ import android.graphics.Typeface;
 import android.text.Layout;
 import android.util.TypedValue;
 import android.view.accessibility.CaptioningManager;
-import com.google.android.exoplayer2.text.Cue;
-import com.google.android.exoplayer2.ui.CaptionStyleCompat;
-import com.google.android.exoplayer2.ui.SubtitleView;
+import androidx.media3.common.text.Cue;
+import androidx.media3.ui.CaptionStyleCompat;
+import androidx.media3.ui.SubtitleView;
 import java.util.ArrayList;
 import java.util.List;
 

@@ -5,7 +5,8 @@
     android:layout_height="wrap_content"
     android:layout_gravity="bottom|end"
     android:paddingStart="@dimen/controls_padding"
-    android:scrollbars="none">
+    android:scrollbars="none"
+    android:overScrollMode="never">
 
     <LinearLayout
         android:id="@+id/controls"
@@ -13,5 +14,6 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom|end"
         android:layoutDirection="ltr"
-        android:orientation="horizontal" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical" />
 </HorizontalScrollView>

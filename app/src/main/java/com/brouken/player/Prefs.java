@@ -6,19 +6,19 @@ import android.content.SharedPreferences;
 import android.net.Uri;
 import android.preference.PreferenceManager;
 
-import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
+import androidx.media3.ui.AspectRatioFrameLayout;
 
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import com.brouken.player.data.db.AppDatabase;
+import com.brouken.player.data.db.WatchProgressDao;
+import com.brouken.player.data.db.WatchProgressEntity;
+
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-class Prefs {
+public class Prefs {
 
     private static final String PREF_KEY_MEDIA_URI = "mediaUri";
     private static final String PREF_KEY_MEDIA_TYPE = "mediaType";
@@ -41,6 +41,8 @@ class Prefs {
     private static final String PREF_KEY_INCLUDED_FOLDERS = "includedFolders";
     private static final String PREF_KEY_SCAN_ONLY_INCLUDED = "scanOnlyIncluded";
     private static final String PREF_KEY_LIVE_CAPTIONS = "liveCaptions";
+    private static final String PREF_KEY_CAPTION_LANGUAGE = "captionLanguage";
+    private static final String PREF_KEY_CAPTION_TRANSLATE = "captionTranslate";
 
     public enum SortMode {
         NAME_ASC(0, R.string.sort_name_asc),
@@ -78,6 +80,8 @@ class Prefs {
     public float scale = 1.f;
 
     public int subtitleTrack = -1;
+    public long subtitleOffset = 0L;
+    public static final String PREF_KEY_SUBTITLE_OFFSET = "subtitle_offset";
     public int audioTrack = -1;
     public int audioTrackFfmpeg = -1;
 
@@ -92,14 +96,13 @@ class Prefs {
     public Set<String> includedFolders = new HashSet<>();
     public boolean scanOnlyIncluded = false;
     public boolean liveCaptions = true;
-
-    private LinkedHashMap positions;
+    public String captionLanguage = "auto";
+    public boolean captionTranslate = true;
 
     public Prefs(Context context) {
         mContext = context;
         mSharedPreferences = PreferenceManager.getDefaultSharedPreferences(context);
         loadSavedPreferences();
-        loadPositions();
     }
 
     private void loadSavedPreferences() {
@@ -132,12 +135,20 @@ class Prefs {
         includedFolders = new HashSet<>(mSharedPreferences.getStringSet(PREF_KEY_INCLUDED_FOLDERS, Collections.emptySet()));
         scanOnlyIncluded = mSharedPreferences.getBoolean(PREF_KEY_SCAN_ONLY_INCLUDED, scanOnlyIncluded);
         liveCaptions = mSharedPreferences.getBoolean(PREF_KEY_LIVE_CAPTIONS, liveCaptions);
+        captionLanguage = mSharedPreferences.getString(PREF_KEY_CAPTION_LANGUAGE, "auto");
+        captionTranslate = mSharedPreferences.getBoolean(PREF_KEY_CAPTION_TRANSLATE, true);
+        subtitleOffset = mSharedPreferences.getLong(PREF_KEY_SUBTITLE_OFFSET, 0L);
     }
 
     public void updateMedia(final Context context, final Uri uri, final String type) {
         mediaUri = uri;
         mediaType = type;
-        updateSubtitle(null);
+        if (subtitleTrack != Integer.MIN_VALUE) {
+            updateSubtitle(null);
+        } else {
+            subtitleUri = null;
+            mSharedPreferences.edit().remove(PREF_KEY_SUBTITLE_URI).apply();
+        }
         updateMeta(-1, -1, -1, AspectRatioFrameLayout.RESIZE_MODE_FIT, 1.f);
 
         if (mediaType != null && mediaType.endsWith("/*")) {
@@ -159,7 +170,7 @@ class Prefs {
             sharedPreferencesEditor.remove(PREF_KEY_MEDIA_TYPE);
         else
             sharedPreferencesEditor.putString(PREF_KEY_MEDIA_TYPE, mediaType);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updateSubtitle(final Uri uri) {
@@ -171,19 +182,21 @@ class Prefs {
         else
             sharedPreferencesEditor.putString(PREF_KEY_SUBTITLE_URI, uri.toString());
         sharedPreferencesEditor.remove(PREF_KEY_SUBTITLE_TRACK);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updatePosition(final long position) {
         if (mediaUri == null)
             return;
 
-        while (positions.size() > 100)
-            positions.remove(positions.keySet().toArray()[0]);
-
-        positions.put(mediaUri.toString(), position);
-        savePositions();
-        mSharedPreferences.edit().putLong("resumeWritten:" + mediaUri, System.currentTimeMillis()).apply();
+        WatchProgressDao dao = AppDatabase.getInstance(mContext).watchProgressDao();
+        WatchProgressEntity entity = dao.get(mediaUri.toString());
+        long duration = entity != null ? entity.durationMs : 0;
+        boolean completed = entity != null && entity.completed;
+        long now = System.currentTimeMillis();
+        WatchProgressEntity updated = new WatchProgressEntity(mediaUri.toString(), position, duration, completed, now);
+        dao.upsert(updated);
+        mSharedPreferences.edit().putLong("resumeWritten:" + mediaUri, now).apply();
     }
 
     public void updateBrightness(final int brightness) {
@@ -191,7 +204,7 @@ class Prefs {
             this.brightness = brightness;
             final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
             sharedPreferencesEditor.putInt(PREF_KEY_BRIGHTNESS, brightness);
-            sharedPreferencesEditor.commit();
+            sharedPreferencesEditor.apply();
         }
     }
 
@@ -199,65 +212,37 @@ class Prefs {
         this.firstRun = false;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_FIRST_RUN, false);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void markScopeAsked() {
         this.askScope = false;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_ASK_SCOPE, false);
-        sharedPreferencesEditor.commit();
-    }
-
-    private void savePositions() {
-        try {
-            FileOutputStream fos = mContext.openFileOutput("positions", Context.MODE_PRIVATE);
-            ObjectOutputStream os = new ObjectOutputStream(fos);
-            os.writeObject(positions);
-            os.close();
-            fos.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
-    private void loadPositions() {
-        try {
-            FileInputStream fis = mContext.openFileInput("positions");
-            ObjectInputStream is = new ObjectInputStream(fis);
-            positions = (LinkedHashMap) is.readObject();
-            is.close();
-            fis.close();
-        } catch (Exception e) {
-            e.printStackTrace();
-            positions = new LinkedHashMap(10);
-        }
+        sharedPreferencesEditor.apply();
     }
 
     public long getPosition() {
         if (mediaUri == null) return 0L;
-        WatchHistory.Entry checkpoint = new WatchHistory(mContext).latest(mediaUri);
-        if (checkpoint != null && checkpoint.updated > mSharedPreferences.getLong("resumeWritten:" + mediaUri, 0)) {
-            return WatchProgress.resumePosition(checkpoint.position, checkpoint.duration);
+        WatchProgressDao dao = AppDatabase.getInstance(mContext).watchProgressDao();
+        WatchProgressEntity entity = dao.get(mediaUri.toString());
+        if (entity != null) {
+            return entity.durationMs > 0 ? WatchProgress.resumePosition(entity.positionMs, entity.durationMs) : entity.positionMs;
         }
-        Object val = positions.get(mediaUri.toString());
-        if (val instanceof Long)
-            return checkpoint != null ? WatchProgress.resumePosition((long) val, checkpoint.duration) : (long) val;
 
         // Return position for uri from limited scope (loaded after using Next action)
         if (ContentResolver.SCHEME_CONTENT.equals(mediaUri.getScheme())) {
             final String searchPath = SubtitleUtils.getTrailPathFromUri(mediaUri);
             if (searchPath == null || searchPath.length() < 1)
                 return 0L;
-            final Set<String> keySet = positions.keySet();
-            final Object[] keys = keySet.toArray();
-            for (int i = keys.length; i > 0; i--) {
-                final String key = (String) keys[i - 1];
-                final Uri uri = Uri.parse(key);
+            final List<WatchProgressEntity> all = dao.getAll();
+            for (int i = all.size() - 1; i >= 0; i--) {
+                final WatchProgressEntity item = all.get(i);
+                final Uri uri = Uri.parse(item.mediaUri);
                 if (ContentResolver.SCHEME_CONTENT.equals(uri.getScheme())) {
                     final String keyPath = SubtitleUtils.getTrailPathFromUri(uri);
                     if (searchPath.equals(keyPath)) {
-                        return (long) positions.get(key);
+                        return item.durationMs > 0 ? WatchProgress.resumePosition(item.positionMs, item.durationMs) : item.positionMs;
                     }
                 }
             }
@@ -269,7 +254,7 @@ class Prefs {
     public void updateOrientation() {
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putInt(PREF_KEY_ORIENTATION, orientation.value);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updateMeta(final int audioTrack, final int audioTrackFfmpeg, final int subtitleTrack, final int resizeMode, final float scale) {
@@ -293,9 +278,13 @@ class Prefs {
             sharedPreferencesEditor.putInt(PREF_KEY_SUBTITLE_TRACK, subtitleTrack);
         sharedPreferencesEditor.putInt(PREF_KEY_RESIZE_MODE, resizeMode);
         sharedPreferencesEditor.putFloat(PREF_KEY_SCALE, scale);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
+    public void updateSubtitleOffset(final long offset) {
+        this.subtitleOffset = offset;
+        mSharedPreferences.edit().putLong(PREF_KEY_SUBTITLE_OFFSET, offset).apply();
+    }
     public void updateSubtitleTrack(final int subtitleTrack) {
         this.subtitleTrack = subtitleTrack;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
@@ -303,7 +292,7 @@ class Prefs {
             sharedPreferencesEditor.remove(PREF_KEY_SUBTITLE_TRACK);
         else
             sharedPreferencesEditor.putInt(PREF_KEY_SUBTITLE_TRACK, subtitleTrack);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updateScope(final Uri uri) {
@@ -313,14 +302,14 @@ class Prefs {
             sharedPreferencesEditor.remove(PREF_KEY_SCOPE_URI);
         else
             sharedPreferencesEditor.putString(PREF_KEY_SCOPE_URI, uri.toString());
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public boolean toggleAutoPiP() {
         autoPiP = !autoPiP;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_AUTO_PIP, autoPiP);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
         return autoPiP;
     }
 
@@ -328,49 +317,63 @@ class Prefs {
         this.showHidden = showHidden;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_SHOW_HIDDEN, showHidden);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updateSortMode(final SortMode sortMode) {
         this.sortMode = sortMode;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putInt(PREF_KEY_SORT_MODE, sortMode.value);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updateAutoPlayNext(final boolean autoPlayNext) {
         this.autoPlayNext = autoPlayNext;
         final SharedPreferences.Editor sharedPreferencesEditor = mSharedPreferences.edit();
         sharedPreferencesEditor.putBoolean(PREF_KEY_AUTOPLAY_NEXT, autoPlayNext);
-        sharedPreferencesEditor.commit();
+        sharedPreferencesEditor.apply();
     }
 
     public void updateExcludedFolders(Set<String> set) {
         this.excludedFolders = new HashSet<>(set);
         final SharedPreferences.Editor editor = mSharedPreferences.edit();
         editor.putStringSet(PREF_KEY_EXCLUDED_FOLDERS, this.excludedFolders);
-        editor.commit();
+        editor.apply();
     }
 
     public void updateIncludedFolders(Set<String> set) {
         this.includedFolders = new HashSet<>(set);
         final SharedPreferences.Editor editor = mSharedPreferences.edit();
         editor.putStringSet(PREF_KEY_INCLUDED_FOLDERS, this.includedFolders);
-        editor.commit();
+        editor.apply();
     }
 
     public void updateScanOnlyIncluded(boolean scanOnlyIncluded) {
         this.scanOnlyIncluded = scanOnlyIncluded;
         final SharedPreferences.Editor editor = mSharedPreferences.edit();
         editor.putBoolean(PREF_KEY_SCAN_ONLY_INCLUDED, scanOnlyIncluded);
-        editor.commit();
+        editor.apply();
     }
 
     public void updateLiveCaptions(boolean liveCaptions) {
         this.liveCaptions = liveCaptions;
         final SharedPreferences.Editor editor = mSharedPreferences.edit();
         editor.putBoolean(PREF_KEY_LIVE_CAPTIONS, liveCaptions);
-        editor.commit();
+        editor.apply();
+    }
+
+    public void updateCaptionLanguage(String captionLanguage) {
+        this.captionLanguage = captionLanguage != null ? captionLanguage : "auto";
+        final SharedPreferences.Editor editor = mSharedPreferences.edit();
+        editor.putString(PREF_KEY_CAPTION_LANGUAGE, this.captionLanguage);
+        editor.apply();
+    }
+
+    public void updateCaptionTranslate(boolean captionTranslate) {
+        this.captionTranslate = captionTranslate;
+        final SharedPreferences.Editor editor = mSharedPreferences.edit();
+        editor.putBoolean(PREF_KEY_CAPTION_TRANSLATE, captionTranslate);
+        editor.apply();
     }
 
     public static String normalizeFolderPath(String rawPath) {

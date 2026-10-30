@@ -2,88 +2,301 @@
 <merge xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
-    <FrameLayout android:id="@+id/exo_controls_background"
-        android:layout_width="match_parent" android:layout_height="match_parent"
+    <!-- Translucent background scrim for controls -->
+    <FrameLayout
+        android:id="@+id/exo_controls_background"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
         android:background="#22000000" />
 
-    <LinearLayout android:id="@+id/player_top_bar" android:layout_width="match_parent" android:layout_height="56dp"
-        android:layout_gravity="top" android:gravity="center_vertical" android:paddingStart="4dp" android:paddingEnd="4dp">
-        <ImageButton android:id="@+id/button_back" style="@style/PlayerAction"
-            android:src="@drawable/ic_arrow_back_white_24dp" android:contentDescription="@string/back_to_library" />
-        <TextView android:id="@+id/player_title" android:layout_width="0dp" android:layout_height="wrap_content"
-            android:layout_weight="1" android:textSize="16sp" android:textColor="@color/white"
-            android:fontFamily="sans-serif" android:maxLines="1" android:ellipsize="end" />
-        <ImageButton android:id="@+id/button_cancel_captions" style="@style/PlayerAction"
-            android:src="@drawable/ic_caption_cancel" android:contentDescription="@string/cancel_caption_job" android:visibility="gone" />
-        <ImageButton android:id="@+id/button_subtitle" style="@style/PlayerAction"
-            android:src="@drawable/ic_subtitles_24dp" android:contentDescription="@string/subtitle_options" />
-        <ImageButton android:id="@+id/exo_settings" style="@style/PlayerAction"
-            android:src="@drawable/ic_settings_24dp" android:contentDescription="@string/playback_settings" />
+    <!-- Sleek Top Bar with gradient -->
+    <LinearLayout
+        android:id="@+id/player_top_bar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_gravity="top"
+        android:background="@drawable/player_top_gradient"
+        android:gravity="center_vertical"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <ImageButton
+            android:id="@+id/button_back"
+            style="@style/PlayerAction"
+            android:src="@drawable/ic_arrow_back_white_24dp"
+            android:contentDescription="@string/back_to_library" />
+
+        <TextView
+            android:id="@+id/player_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:layout_marginEnd="8dp"
+            android:textSize="16sp"
+            android:textColor="@color/white"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:ellipsize="end"
+            android:shadowColor="#80000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="3" />
+
+        <ImageButton
+            android:id="@+id/button_cancel_captions"
+            style="@style/PlayerAction"
+            android:src="@drawable/ic_caption_cancel"
+            android:contentDescription="@string/cancel_caption_job"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/aspect_ratio_pill"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/aspect_ratio_pill_background"
+            android:gravity="center"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:text="FIT"
+            android:textColor="@color/white"
+            android:textSize="12sp"
+            android:fontFamily="sans-serif-medium"
+            android:clickable="true"
+            android:focusable="true"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/button_subtitle"
+            style="@style/PlayerAction"
+            android:src="@drawable/ic_subtitles_24dp"
+            android:contentDescription="@string/subtitle_options" />
+
+        <ImageButton
+            android:id="@+id/exo_settings"
+            style="@style/PlayerAction"
+            android:src="@drawable/ic_settings_24dp"
+            android:contentDescription="@string/playback_settings" />
+
     </LinearLayout>
 
-    <LinearLayout android:id="@+id/exo_center_controls"
-        android:layout_width="wrap_content" android:layout_height="56dp"
-        android:layout_gravity="center" android:gravity="center" android:layoutDirection="ltr">
-        <ImageButton android:id="@+id/exo_prev" style="@style/PlayerAction"
-            android:layout_marginEnd="24dp" android:src="@drawable/ic_skip_previous_24dp"
+    <!-- Center Playback Controls with modern circular translucent buttons -->
+    <LinearLayout
+        android:id="@+id/exo_center_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:gravity="center"
+        android:layoutDirection="ltr"
+        android:orientation="horizontal">
+
+        <!-- Skip Previous -->
+        <ImageButton
+            android:id="@+id/btn_prev"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginEnd="28dp"
+            android:background="@drawable/circular_control_small_background"
+            android:padding="12dp"
+            android:src="@drawable/ic_skip_previous_24dp"
+            app:tint="@color/white"
             android:contentDescription="@string/previous_video" />
-        <FrameLayout android:layout_width="56dp" android:layout_height="56dp">
-            <ImageButton android:id="@+id/exo_play_pause" style="@style/PlayerAction"
-                android:layout_width="56dp" android:layout_height="56dp"
-                android:src="@drawable/ic_play_arrow_48dp" android:contentDescription="@string/play_pause" />
-            <ProgressBar android:id="@+id/loading" android:layout_width="40dp" android:layout_height="40dp"
-                android:layout_gravity="center" android:visibility="gone" />
+
+        <!-- Circular Play / Pause -->
+        <FrameLayout
+            android:layout_width="68dp"
+            android:layout_height="68dp">
+
+            <ImageButton
+                android:id="@+id/exo_play_pause"
+                android:layout_width="68dp"
+                android:layout_height="68dp"
+                android:background="@drawable/circular_control_background"
+                android:padding="14dp"
+                android:src="@drawable/ic_play_arrow_48dp"
+                app:tint="@color/white"
+                android:contentDescription="@string/play_pause" />
+
+            <ProgressBar
+                android:id="@+id/loading"
+                android:layout_width="42dp"
+                android:layout_height="42dp"
+                android:layout_gravity="center"
+                android:indeterminateTint="@color/player_accent"
+                android:visibility="gone" />
+
         </FrameLayout>
-        <ImageButton android:id="@+id/exo_next" style="@style/PlayerAction"
-            android:layout_marginStart="24dp" android:src="@drawable/ic_skip_next_24dp"
+
+        <!-- Skip Next -->
+        <ImageButton
+            android:id="@+id/btn_next"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_marginStart="28dp"
+            android:background="@drawable/circular_control_small_background"
+            android:padding="12dp"
+            android:src="@drawable/ic_skip_next_24dp"
+            app:tint="@color/white"
             android:contentDescription="@string/next_video" />
+
     </LinearLayout>
 
-    <LinearLayout android:id="@+id/exo_bottom_bar"
-        android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_gravity="bottom" android:orientation="vertical" android:layoutDirection="ltr"
-        android:background="@drawable/player_bottom_gradient">
-        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp"
-            android:gravity="center_vertical" android:paddingStart="12dp" android:paddingEnd="12dp">
-            <!-- ExoPlayer measures exo_time to decide compact mode. It must wrap the labels, not the seek bar. -->
-            <LinearLayout android:id="@+id/exo_time"
-                android:layout_width="wrap_content" android:layout_height="wrap_content" android:gravity="center_vertical">
-                <TextView android:id="@+id/exo_position" style="@style/PlayerTime" />
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:text=" / " android:textColor="#B3FFFFFF" android:importantForAccessibility="no" />
-                <TextView android:id="@+id/exo_duration" style="@style/PlayerTime"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:clickable="true" android:focusable="true" android:minHeight="48dp" android:gravity="center" />
+    <!-- Bottom Bar with modern sleek timebar and badges -->
+    <LinearLayout
+        android:id="@+id/exo_bottom_bar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:orientation="vertical"
+        android:layoutDirection="ltr"
+        android:background="@drawable/player_bottom_gradient"
+        android:paddingBottom="6dp">
+
+        <!-- Timebar and Elapsed / Remaining Badges Row -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:gravity="center_vertical"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp">
+
+            <!-- ExoPlayer measures exo_time to decide compact mode. It wraps position & duration -->
+            <LinearLayout
+                android:id="@+id/exo_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:layout_marginEnd="10dp">
+
+                <TextView
+                    android:id="@+id/exo_position"
+                    style="@style/PlayerTime"
+                    android:background="@drawable/pill_badge_background"
+                    android:paddingStart="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="3dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text=" / "
+                    android:textColor="#88FFFFFF"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:importantForAccessibility="no" />
+
+                <TextView
+                    android:id="@+id/exo_duration"
+                    style="@style/PlayerTime"
+                    android:background="@drawable/pill_badge_background"
+                    android:paddingStart="8dp"
+                    android:paddingTop="3dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="3dp"
+                    android:clickable="true"
+                    android:focusable="true" />
             </LinearLayout>
-            <com.brouken.player.CustomDefaultTimeBar android:id="@+id/exo_progress"
-                android:layout_width="0dp" android:layout_height="48dp" android:layout_weight="1"
-                app:bar_height="3dp" app:touch_target_height="48dp" app:played_color="@color/player_accent"
-                app:scrubber_color="#FFFFFF" app:buffered_color="#55FFFFFF" app:unplayed_color="#33FFFFFF" />
+
+            <!-- Sleek Custom Timebar -->
+            <com.brouken.player.CustomDefaultTimeBar
+                android:id="@+id/exo_progress"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                app:bar_height="3.5dp"
+                app:touch_target_height="48dp"
+                app:scrubber_dragged_size="16dp"
+                app:scrubber_enabled_size="12dp"
+                app:played_color="@color/player_accent"
+                app:scrubber_color="@color/white"
+                app:buffered_color="#66FFFFFF"
+                app:unplayed_color="#33FFFFFF" />
+
         </LinearLayout>
 
-        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="48dp"
-            android:fillViewport="true" android:scrollbars="none">
-            <LinearLayout android:layout_width="wrap_content" android:layout_height="48dp" android:gravity="center">
-                <ImageButton android:id="@+id/button_lock" style="@style/PlayerAction"
-                    android:src="@drawable/ic_lock_open_24dp" android:contentDescription="@string/lock_screen" />
-                <ImageButton android:id="@+id/button_aspect_ratio" style="@style/PlayerAction"
-                    android:src="@drawable/ic_aspect_ratio_24dp" android:contentDescription="@string/aspect_ratio" />
-                <ImageButton android:id="@+id/button_rotate" style="@style/PlayerAction"
-                    android:src="@drawable/ic_auto_rotate_24dp" android:contentDescription="@string/rotate_video" />
-                <ImageButton android:id="@+id/button_pip" style="@style/PlayerAction"
-                    android:src="@drawable/ic_picture_in_picture_alt_24dp" android:contentDescription="@string/picture_in_picture" />
+        <!-- Quick Actions Row -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:fillViewport="true"
+            android:scrollbars="none"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp">
 
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="52dp"
+                android:gravity="center_vertical">
 
-                <ImageButton android:id="@+id/button_open" style="@style/PlayerAction" android:visibility="gone"
-                    android:src="@drawable/ic_folder_open_24dp" android:contentDescription="@string/back_to_library" />
+                <ImageButton
+                    android:id="@+id/button_lock"
+                    style="@style/PlayerAction"
+                    android:src="@drawable/ic_lock_open_24dp"
+                    android:contentDescription="@string/lock_screen" />
+
+                <!-- Speed indicator pill -->
+                <TextView
+                    android:id="@+id/button_speed"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginStart="4dp"
+                    android:layout_marginEnd="4dp"
+                    android:background="@drawable/speed_pill_background"
+                    android:gravity="center"
+                    android:paddingStart="10dp"
+                    android:paddingEnd="10dp"
+                    android:text="1.0x"
+                    android:textColor="@color/white"
+                    android:textSize="12sp"
+                    android:fontFamily="sans-serif-medium"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <ImageButton
+                    android:id="@+id/button_aspect_ratio"
+                    style="@style/PlayerAction"
+                    android:src="@drawable/ic_aspect_ratio_24dp"
+                    android:contentDescription="@string/aspect_ratio" />
+
+                <ImageButton
+                    android:id="@+id/button_rotate"
+                    style="@style/PlayerAction"
+                    android:src="@drawable/ic_auto_rotate_24dp"
+                    android:contentDescription="@string/rotate_video" />
+
+                <ImageButton
+                    android:id="@+id/button_pip"
+                    style="@style/PlayerAction"
+                    android:src="@drawable/ic_picture_in_picture_alt_24dp"
+                    android:contentDescription="@string/picture_in_picture" />
+
+                <ImageButton
+                    android:id="@+id/button_open"
+                    style="@style/PlayerAction"
+                    android:visibility="gone"
+                    android:src="@drawable/ic_folder_open_24dp"
+                    android:contentDescription="@string/back_to_library" />
+
             </LinearLayout>
+
         </HorizontalScrollView>
+
     </LinearLayout>
 
-    <LinearLayout android:id="@+id/exo_minimal_controls"
-        android:layout_width="wrap_content" android:layout_height="48dp" android:layout_gravity="bottom|end"
+    <LinearLayout
+        android:id="@+id/exo_minimal_controls"
+        android:layout_width="wrap_content"
+        android:layout_height="48dp"
+        android:layout_gravity="bottom|end"
         android:visibility="gone">
-        <ImageButton android:id="@+id/button_minimal_play" style="@style/PlayerAction"
-            android:src="@drawable/ic_play_arrow_24dp" android:contentDescription="@string/play_pause" />
+
+        <ImageButton
+            android:id="@+id/button_minimal_play"
+            style="@style/PlayerAction"
+            android:src="@drawable/ic_play_arrow_24dp"
+            android:contentDescription="@string/play_pause" />
     </LinearLayout>
+
 </merge>

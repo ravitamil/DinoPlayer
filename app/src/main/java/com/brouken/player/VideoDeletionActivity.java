@@ -7,100 +7,262 @@ import android.net.Uri;
 import android.os.*;
 import android.provider.*;
 import android.widget.*;
+import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.IntentSenderRequest;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import java.io.*;
 import java.util.*;
 import java.util.concurrent.*;
 
-/** Never reports success until the provider/file deletion succeeds. Native caption cleanup comes first. */
+/** Deletes one or multiple videos cleanly. Native caption cleanup and watch progress removal come first. */
 public final class VideoDeletionActivity extends AppCompatActivity {
-    private static final int APPROVE=4101;
-    private final ExecutorService worker=Executors.newSingleThreadExecutor();
-    private final Handler main=new Handler(Looper.getMainLooper());
-    private Uri media;private String path;private boolean captions,waiting;
-    private ArrayList<String> associated;
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final ArrayList<Uri> mediaUris = new ArrayList<>();
+    private final ArrayList<String> mediaPaths = new ArrayList<>();
+    private boolean captions = true;
+    private boolean waiting = false;
+    private final ArrayList<String> associatedFiles = new ArrayList<>();
     private TextView message;
-    @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
-        CaptionWorkStore.initialize(this);
-        media=getIntent().getData();path=getIntent().getStringExtra("path");captions=getIntent().getBooleanExtra("captions",true);
-        message=new TextView(this);message.setTextSize(16);message.setGravity(android.view.Gravity.CENTER);
-        message.setPadding(24,24,24,24);setContentView(message);message.setText("Stopping subtitle generation…");
-        if(media==null) { finish();return; }
-        associated=state==null?new ArrayList<>():state.getStringArrayList("associated");
-        if(associated==null)associated=new ArrayList<>();
-        if(associated.isEmpty())for(File file:CaptionLibrary.associated(this,media,path))associated.add(file.getAbsolutePath());
-        waiting=state!=null && state.getBoolean("waiting");
-        new CaptionWorkStore(this).blockDeletion(media,true);
-        if(waiting)message.setText("Waiting for Android’s deletion approval…");else delete(false);
-    }
-    private void delete(boolean approved) {
-        worker.execute(() -> {
-            try {
-                CaptionAutoJobs.removeQueued(this,media,null);
-                SubtitleGenerator.cancelAndAwait(media);
-                if(!absent()) {
-                    if("file".equals(media.getScheme())) {
-                        File file=new File(media.getPath());
-                        if(!file.delete())throw new IOException("The video file could not be deleted");
-                        android.media.MediaScannerConnection.scanFile(this,new String[]{file.getPath()},null,null);
-                    } else if(DocumentsContract.isDocumentUri(this,media)) {
-                        if(!DocumentsContract.deleteDocument(getContentResolver(),media))throw new IOException("The document provider did not delete the video");
-                    } else if(getContentResolver().delete(media,null,null)==0 && !absent()) {
-                        throw new IOException("The video could not be deleted");
-                    }
+
+    private final ActivityResultLauncher<IntentSenderRequest> approvalLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartIntentSenderForResult(),
+            result -> {
+                waiting = false;
+                if (result.getResultCode() == RESULT_OK) {
+                    deleteVideos(true);
+                } else {
+                    failure("Deletion cancelled");
                 }
-                if(path!=null && !path.startsWith("content:") && new File(path).isFile())throw new IOException("The video file is still present; refresh and try again");
-                boolean clean=true;
-                if(captions)for(String file:associated) { File target=new File(file);if(target.exists() && !target.delete())clean=false; }
-                CaptionWorkStore store=new CaptionWorkStore(this);store.forget(media);store.blockDeletion(media,false);
-                PlaylistManager.remove(this,media);new WatchHistory(this).forget(media);
-                final boolean cleaned=clean;
-                main.post(() -> { if(isDestroyed())return;setResult(RESULT_OK,new Intent().setData(media));
-                    Toast.makeText(this,cleaned?"Video deleted":"Video deleted; some cached subtitles could not be removed",Toast.LENGTH_LONG).show();finish(); });
-            } catch(SecurityException denied) {
-                main.post(() -> requestApproval(denied,approved));
-            } catch(Exception error) { main.post(() -> failure(error.getMessage())); }
+            });
+
+    @Override
+    public void onCreate(Bundle state) {
+        super.onCreate(state);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (waiting) {
+                    finish();
+                }
+            }
         });
-    }
-    private boolean absent() throws IOException {
-        if("file".equals(media.getScheme()))return !new File(media.getPath()).exists();
-        try(Cursor cursor=getContentResolver().query(media,new String[]{android.provider.BaseColumns._ID},null,null,null)) {
-            return cursor!=null && !cursor.moveToFirst();
-        } catch(IllegalArgumentException e) {
-            // Document providers may not expose _id; use a descriptor instead.
-            try(android.os.ParcelFileDescriptor ignored=getContentResolver().openFileDescriptor(media,"r")) { return false; }
-            catch(FileNotFoundException missing) { return true; }
+        CaptionWorkStore.initialize(this);
+
+        List<Uri> extraUris = getIntent().getParcelableArrayListExtra("uris");
+        if (extraUris != null) {
+            mediaUris.addAll(extraUris);
+        } else if (getIntent().getData() != null) {
+            mediaUris.add(getIntent().getData());
+        }
+
+        List<String> extraPaths = getIntent().getStringArrayListExtra("paths");
+        if (extraPaths != null) {
+            mediaPaths.addAll(extraPaths);
+        } else if (getIntent().getStringExtra("path") != null) {
+            mediaPaths.add(getIntent().getStringExtra("path"));
+        }
+
+        captions = getIntent().getBooleanExtra("captions", true);
+
+        message = new TextView(this);
+        message.setTextSize(16);
+        message.setGravity(android.view.Gravity.CENTER);
+        message.setPadding(32, 32, 32, 32);
+        setContentView(message);
+        message.setText("Preparing deletion…");
+
+        if (mediaUris.isEmpty()) {
+            finish();
+            return;
+        }
+
+        if (state != null) {
+            waiting = state.getBoolean("waiting");
+            ArrayList<String> savedAssociated = state.getStringArrayList("associated");
+            if (savedAssociated != null) {
+                associatedFiles.addAll(savedAssociated);
+            }
+        }
+
+        if (associatedFiles.isEmpty()) {
+            for (int i = 0; i < mediaUris.size(); i++) {
+                Uri u = mediaUris.get(i);
+                String p = (i < mediaPaths.size()) ? mediaPaths.get(i) : null;
+                for (File file : CaptionLibrary.associated(this, u, p)) {
+                    associatedFiles.add(file.getAbsolutePath());
+                }
+            }
+        }
+
+        CaptionWorkStore store = new CaptionWorkStore(this);
+        for (Uri u : mediaUris) {
+            store.blockDeletion(u, true);
+        }
+
+        if (waiting) {
+            message.setText("Waiting for confirmation…");
+        } else {
+            deleteVideos(false);
         }
     }
-    private void requestApproval(SecurityException error,boolean approved) {
-        if(isDestroyed())return;
-        if(approved) { failure("Android did not grant permission to delete this video");return; }
+
+    private void deleteVideos(boolean approved) {
+        worker.execute(() -> {
+            try {
+                // Check if MediaStore approval is needed first on API 30+
+                if (!approved && Build.VERSION.SDK_INT >= 30) {
+                    List<Uri> mediaStoreUris = new ArrayList<>();
+                    for (Uri u : mediaUris) {
+                        if ("media".equals(u.getAuthority())) {
+                            mediaStoreUris.add(u);
+                        }
+                    }
+                    if (!mediaStoreUris.isEmpty()) {
+                        try {
+                            PendingIntent pendingIntent = MediaStore.createDeleteRequest(getContentResolver(), mediaStoreUris);
+                            main.post(() -> launchApproval(pendingIntent.getIntentSender()));
+                            return;
+                        } catch (Exception ignored) {
+                            // Fall through to direct deletion attempt
+                        }
+                    }
+                }
+
+                CaptionWorkStore store = new CaptionWorkStore(this);
+                WatchHistory history = new WatchHistory(this);
+
+                for (int i = 0; i < mediaUris.size(); i++) {
+                    Uri media = mediaUris.get(i);
+                    String path = (i < mediaPaths.size()) ? mediaPaths.get(i) : null;
+
+                    CaptionAutoJobs.removeQueued(this, media, null);
+                    SubtitleGenerator.cancelAndAwait(media);
+
+                    if (!isAbsent(media)) {
+                        if ("file".equals(media.getScheme())) {
+                            File file = new File(media.getPath());
+                            if (!file.delete() && file.exists()) {
+                                throw new IOException("Unable to delete: " + file.getName());
+                            }
+                            android.media.MediaScannerConnection.scanFile(this, new String[]{file.getPath()}, null, null);
+                        } else if (DocumentsContract.isDocumentUri(this, media)) {
+                            if (!DocumentsContract.deleteDocument(getContentResolver(), media) && !isAbsent(media)) {
+                                throw new IOException("Document provider could not delete file");
+                            }
+                        } else {
+                            try {
+                                getContentResolver().delete(media, null, null);
+                            } catch (SecurityException sec) {
+                                if (!approved) {
+                                    main.post(() -> requestSingleApproval(sec, media));
+                                    return;
+                                }
+                            }
+                        }
+                    }
+
+                    if (path != null && !path.startsWith("content:") && new File(path).isFile()) {
+                        new File(path).delete();
+                    }
+
+                    store.forget(media);
+                    store.blockDeletion(media, false);
+                    PlaylistManager.remove(this, media);
+                    history.forget(media);
+                }
+
+                if (captions) {
+                    for (String filePath : associatedFiles) {
+                        File target = new File(filePath);
+                        if (target.exists()) {
+                            target.delete();
+                        }
+                    }
+                }
+
+                main.post(() -> {
+                    if (isDestroyed()) return;
+                    setResult(RESULT_OK);
+                    int count = mediaUris.size();
+                    Toast.makeText(this, count == 1 ? "Video deleted" : (count + " videos deleted"), Toast.LENGTH_SHORT).show();
+                    finish();
+                });
+            } catch (Exception error) {
+                main.post(() -> failure(error.getMessage()));
+            }
+        });
+    }
+
+    private boolean isAbsent(Uri uri) {
+        if ("file".equals(uri.getScheme())) {
+            return !new File(uri.getPath()).exists();
+        }
+        try (Cursor cursor = getContentResolver().query(uri, new String[]{android.provider.BaseColumns._ID}, null, null, null)) {
+            return cursor != null && !cursor.moveToFirst();
+        } catch (Exception e) {
+            try (ParcelFileDescriptor pfd = getContentResolver().openFileDescriptor(uri, "r")) {
+                return false;
+            } catch (FileNotFoundException missing) {
+                return true;
+            } catch (Exception ignored) {
+                return false;
+            }
+        }
+    }
+
+    private void launchApproval(IntentSender sender) {
+        if (isDestroyed()) return;
+        waiting = true;
+        message.setText("Confirm deletion in the system dialog…");
+        approvalLauncher.launch(new IntentSenderRequest.Builder(sender).build());
+    }
+
+    private void requestSingleApproval(SecurityException error, Uri uri) {
+        if (isDestroyed()) return;
         try {
-            IntentSender sender;
-            if(Build.VERSION.SDK_INT>=29 && error instanceof RecoverableSecurityException)
-                sender=((RecoverableSecurityException)error).getUserAction().getActionIntent().getIntentSender();
-            else if(Build.VERSION.SDK_INT>=30 && "media".equals(media.getAuthority()))
-                sender=MediaStore.createDeleteRequest(getContentResolver(),Collections.singletonList(media)).getIntentSender();
-            else { failure("DinoPlayer cannot delete this video. Grant write access to its folder in Settings.");return; }
-            waiting=true;message.setText("Approve deletion in the Android dialog");
-            startIntentSenderForResult(sender,APPROVE,null,0,0,0);
-        } catch(Exception e) { failure("Unable to request deletion permission"); }
+            IntentSender sender = null;
+            if (Build.VERSION.SDK_INT >= 29 && error instanceof RecoverableSecurityException) {
+                sender = ((RecoverableSecurityException) error).getUserAction().getActionIntent().getIntentSender();
+            } else if (Build.VERSION.SDK_INT >= 30 && "media".equals(uri.getAuthority())) {
+                sender = MediaStore.createDeleteRequest(getContentResolver(), Collections.singletonList(uri)).getIntentSender();
+            }
+            if (sender != null) {
+                launchApproval(sender);
+            } else {
+                failure("Storage write permission is required to delete this video");
+            }
+        } catch (Exception e) {
+            failure("Unable to request deletion permission");
+        }
     }
-    @Override protected void onActivityResult(int request,int result,Intent data) {
-        super.onActivityResult(request,result,data);
-        if(request==APPROVE) { waiting=false;if(result==RESULT_OK)delete(true);else failure("Deletion cancelled. Video kept."); }
-    }
+
     private void failure(String reason) {
-        if(isDestroyed())return;
-        new CaptionWorkStore(this).blockDeletion(media,false);
-        new androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Video kept")
-                .setMessage(reason==null?"Deletion failed":reason).setPositiveButton(android.R.string.ok,(d,w)->finish())
-                .setOnCancelListener(d->finish()).show();
+        if (isDestroyed()) return;
+        CaptionWorkStore store = new CaptionWorkStore(this);
+        for (Uri u : mediaUris) {
+            store.blockDeletion(u, false);
+        }
+        new androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Deletion Cancelled")
+                .setMessage(reason == null ? "Deletion failed" : reason)
+                .setPositiveButton(android.R.string.ok, (d, w) -> finish())
+                .setOnCancelListener(d -> finish())
+                .show();
     }
-    @Override public void onBackPressed() { if(waiting)super.onBackPressed(); /* Do not abandon a file mutation mid-operation. */ }
-    @Override protected void onSaveInstanceState(Bundle out) {
-        super.onSaveInstanceState(out);out.putBoolean("waiting",waiting);out.putStringArrayList("associated",associated);
+
+    @Override
+    protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putBoolean("waiting", waiting);
+        out.putStringArrayList("associated", associatedFiles);
     }
-    @Override protected void onDestroy() { worker.shutdown();super.onDestroy(); }
+
+    @Override
+    protected void onDestroy() {
+        worker.shutdown();
+        super.onDestroy();
+    }
 }

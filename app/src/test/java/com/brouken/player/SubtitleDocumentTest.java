@@ -24,7 +24,65 @@ public class SubtitleDocumentTest {
     }
     @Test(expected=IOException.class) public void invalidMinuteIsRejected() throws Exception { SubtitleDocument.parseTime("00:61:01.000"); }
     @Test(expected=IOException.class) public void endBeforeStartIsRejected() throws Exception { SubtitleDocument.read(new StringReader("1\n00:00:02,000 --> 00:00:01,000\nWrong\n")); }
-    @Test(expected=IOException.class) public void overlappingEditsCannotBeSaved() throws Exception { SubtitleDocument.write(new StringWriter(),Arrays.asList(new SubtitleTimeline.Cue(0,2000,"one"),new SubtitleTimeline.Cue(1500,3000,"two")),false); }
+    @Test public void overlappingCuesParseAndSaveCorrectly() throws Exception {
+        String input = "1\n00:00:01,000 --> 00:00:03,000\nSpeaker 1\n\n2\n00:00:02,000 --> 00:00:04,000\nSpeaker 2\n";
+        List<SubtitleTimeline.Cue> cues = SubtitleDocument.read(new StringReader(input));
+        assertEquals(2, cues.size());
+        assertEquals(1000, cues.get(0).startMs);
+        assertEquals(3000, cues.get(0).endMs);
+        assertEquals(2000, cues.get(1).startMs);
+        assertEquals(4000, cues.get(1).endMs);
+
+        StringWriter output = new StringWriter();
+        SubtitleDocument.write(output, cues, false);
+        List<SubtitleTimeline.Cue> roundTrip = SubtitleDocument.read(new StringReader(output.toString()));
+        assertEquals(2, roundTrip.size());
+        assertEquals("Speaker 1", roundTrip.get(0).text);
+        assertEquals("Speaker 2", roundTrip.get(1).text);
+        assertEquals(1000, roundTrip.get(0).startMs);
+        assertEquals(2000, roundTrip.get(1).startMs);
+    }
+    @Test public void identicalStartTimeCuesAreSupported() throws Exception {
+        List<SubtitleTimeline.Cue> cues = Arrays.asList(
+            new SubtitleTimeline.Cue(1000, 3000, "Cue A"),
+            new SubtitleTimeline.Cue(1000, 4000, "Cue B")
+        );
+        SubtitleDocument.validate(cues);
+        StringWriter output = new StringWriter();
+        SubtitleDocument.write(output, cues, false);
+        List<SubtitleTimeline.Cue> roundTrip = SubtitleDocument.read(new StringReader(output.toString()));
+        assertEquals(2, roundTrip.size());
+        assertEquals(1000, roundTrip.get(0).startMs);
+        assertEquals(1000, roundTrip.get(1).startMs);
+    }
+    @Test public void nestedOverlappingCuesSupported() throws Exception {
+        List<SubtitleTimeline.Cue> cues = Arrays.asList(
+            new SubtitleTimeline.Cue(1000, 5000, "Outer"),
+            new SubtitleTimeline.Cue(2000, 3000, "Inner")
+        );
+        SubtitleDocument.validate(cues);
+        StringWriter output = new StringWriter();
+        SubtitleDocument.write(output, cues, true);
+        List<SubtitleTimeline.Cue> roundTrip = SubtitleDocument.read(new StringReader(output.toString()));
+        assertEquals(2, roundTrip.size());
+        assertEquals("Outer", roundTrip.get(0).text);
+        assertEquals("Inner", roundTrip.get(1).text);
+    }
+    @Test public void shiftingOverlappingCuesClampsStartCorrectly() throws Exception {
+        List<SubtitleTimeline.Cue> cues = Arrays.asList(
+            new SubtitleTimeline.Cue(500, 2500, "Early"),
+            new SubtitleTimeline.Cue(1000, 3000, "Later")
+        );
+        List<SubtitleTimeline.Cue> shifted = SubtitleDocument.shifted(cues, -800);
+        assertEquals(2, shifted.size());
+        assertEquals(0, shifted.get(0).startMs);
+        assertEquals(1700, shifted.get(0).endMs);
+        assertEquals(200, shifted.get(1).startMs);
+        assertEquals(2200, shifted.get(1).endMs);
+    }
+    @Test(expected=IOException.class) public void unsortedCuesAreRejected() throws Exception {
+        SubtitleDocument.validate(Arrays.asList(new SubtitleTimeline.Cue(2000, 3000, "two"), new SubtitleTimeline.Cue(1000, 2000, "one")));
+    }
     @Test(expected=IOException.class) public void unsupportedDocumentFailsClearly() throws Exception { SubtitleDocument.read(new StringReader("[Script Info]\nASS is not an SRT document")); }
     @Test(expected=IOException.class) public void shiftingEverythingBeforeStartIsRejected() throws Exception { SubtitleDocument.shifted(Collections.singletonList(new SubtitleTimeline.Cue(0,100,"one")),-500); }
     @Test(expected=IOException.class) public void excessiveCaptionTextIsBounded() throws Exception { char[] chars=new char[16385];Arrays.fill(chars,'x');SubtitleDocument.read(new StringReader("1\n00:00:00,000 --> 00:00:01,000\n"+new String(chars))); }

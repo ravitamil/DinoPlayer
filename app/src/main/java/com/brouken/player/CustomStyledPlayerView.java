@@ -17,15 +17,17 @@ import android.widget.TextView;
 import androidx.core.view.GestureDetectorCompat;
 
 import com.brouken.player.dtpv.youtube.YouTubeOverlay;
-import com.google.android.exoplayer2.C;
-import com.google.android.exoplayer2.SeekParameters;
-import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
-import com.google.android.exoplayer2.ui.StyledPlayerView;
+import androidx.media3.common.C;
+import androidx.media3.common.Player;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.exoplayer.SeekParameters;
+import androidx.media3.ui.AspectRatioFrameLayout;
+import androidx.media3.ui.PlayerView;
 
 import java.util.Collections;
 import java.util.Locale;
 
-public class CustomStyledPlayerView extends StyledPlayerView implements GestureDetector.OnGestureListener, ScaleGestureDetector.OnScaleGestureListener {
+public class CustomStyledPlayerView extends PlayerView implements GestureDetector.OnGestureListener, ScaleGestureDetector.OnScaleGestureListener {
 
     private final GestureDetectorCompat mDetector;
 
@@ -66,15 +68,41 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
     private static final float MIN_SPEED = 0.5f;
     private static final float MAX_SPEED = 4.0f;
 
+    private PlayerControllerBridge mBridge;
+
+    public void setControllerBridge(PlayerControllerBridge bridge) {
+        this.mBridge = bridge;
+    }
+
+    public PlayerControllerBridge getControllerBridge() {
+        return mBridge;
+    }
+
+    private ExoPlayer getPlayerInstance() {
+        if (mBridge != null) {
+            return mBridge.getPlayer();
+        }
+        Player player = getPlayer();
+        if (player instanceof ExoPlayer) {
+            return (ExoPlayer) player;
+        }
+        return null;
+    }
+
+    private boolean hasMedia() {
+        return mBridge != null && mBridge.hasMedia();
+    }
+
     public boolean isTapAndHoldActive() {
         return isTapAndHoldActive;
     }
 
     public void cancelPendingGestures() {
         removeCallbacks(textClearRunnable);
-        if (isTapAndHoldActive && PlayerActivity.player != null) {
-            PlayerActivity.player.setPlaybackParameters(
-                    PlayerActivity.player.getPlaybackParameters().withSpeed(originalPlaybackSpeed));
+        ExoPlayer player = getPlayerInstance();
+        if (isTapAndHoldActive && player != null) {
+            player.setPlaybackParameters(
+                    player.getPlaybackParameters().withSpeed(originalPlaybackSpeed));
         }
         isTapAndHoldActive = false;
         restorePlayState = false;
@@ -130,9 +158,9 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
             return true;
         }
 
-        if (PlayerActivity.restoreControllerTimeout) {
-            setControllerShowTimeoutMs(PlayerActivity.CONTROLLER_TIMEOUT);
-            PlayerActivity.restoreControllerTimeout = false;
+        if (mBridge != null && mBridge.isRestoreControllerTimeout()) {
+            setControllerShowTimeoutMs(PlayerControllerBridge.CONTROLLER_TIMEOUT);
+            mBridge.setRestoreControllerTimeout(false);
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && gestureOrientation == Orientation.UNKNOWN && !isTapAndHoldActive)
@@ -140,8 +168,7 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
 
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                if (PlayerActivity.snackbar != null && PlayerActivity.snackbar.isShown()) {
-                    PlayerActivity.snackbar.dismiss();
+                if (mBridge != null && mBridge.dismissSnackbar()) {
                     handleTouch = false;
                 } else {
                     removeCallbacks(textClearRunnable);
@@ -166,9 +193,10 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
 
                             if (Math.abs(newSpeed - tapAndHoldSpeed) >= 0.01f) {
                                 tapAndHoldSpeed = newSpeed;
-                                if (PlayerActivity.player != null) {
-                                    PlayerActivity.player.setPlaybackParameters(
-                                        PlayerActivity.player.getPlaybackParameters().withSpeed(tapAndHoldSpeed)
+                                ExoPlayer player = getPlayerInstance();
+                                if (player != null) {
+                                    player.setPlaybackParameters(
+                                        player.getPlaybackParameters().withSpeed(tapAndHoldSpeed)
                                     );
                                 }
                                 performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
@@ -185,12 +213,13 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
                 if (isTapAndHoldActive) {
                     isTapAndHoldActive = false;
                     tapAndHoldEndTime = SystemClock.uptimeMillis();
-                    if (PlayerActivity.player != null) {
-                        PlayerActivity.player.setPlaybackParameters(
-                            PlayerActivity.player.getPlaybackParameters().withSpeed(originalPlaybackSpeed)
+                    ExoPlayer player = getPlayerInstance();
+                    if (player != null) {
+                        player.setPlaybackParameters(
+                            player.getPlaybackParameters().withSpeed(originalPlaybackSpeed)
                         );
-                        if (!wasPlayingBeforeTapAndHold && PlayerActivity.player.isPlaying()) {
-                            PlayerActivity.player.pause();
+                        if (!wasPlayingBeforeTapAndHold && player.isPlaying()) {
+                            player.pause();
                         }
                     }
                     setCustomErrorMessage(null);
@@ -208,7 +237,10 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
 
                     if (restorePlayState) {
                         restorePlayState = false;
-                        PlayerActivity.player.play();
+                        ExoPlayer player = getPlayerInstance();
+                        if (player != null) {
+                            player.play();
+                        }
                     }
 
                     setControllerAutoShow(true);
@@ -254,7 +286,7 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
         if (!isControllerFullyVisible()) {
             showController();
             return true;
-        } else if (PlayerActivity.haveMedia) {
+        } else if (hasMedia()) {
             hideController();
             return true;
         }
@@ -263,7 +295,8 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
 
     @Override
     public boolean onScroll(MotionEvent motionEvent, MotionEvent motionEvent1, float distanceX, float distanceY) {
-        if (mScaleDetector.isInProgress() || PlayerActivity.player == null || isTapAndHoldActive)
+        ExoPlayer player = getPlayerInstance();
+        if (mScaleDetector.isInProgress() || player == null || isTapAndHoldActive)
             return false;
 
         // Exclude edge areas
@@ -284,38 +317,38 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
                 setControllerAutoShow(false);
 
                 if (gestureOrientation == Orientation.UNKNOWN) {
-                    if (PlayerActivity.player.isPlaying()) {
+                    if (player.isPlaying()) {
                         restorePlayState = true;
-                        PlayerActivity.player.pause();
+                        player.pause();
                     }
                     clearIcon();
-                    seekStart = PlayerActivity.player.getCurrentPosition();
+                    seekStart = player.getCurrentPosition();
                     seekChange = 0L;
-                    seekMax = PlayerActivity.player.getDuration();
+                    seekMax = player.getDuration();
                 }
 
                 gestureOrientation = Orientation.HORIZONTAL;
                 final long position;
                 float distanceDiff = Math.max(0.5f, Math.min(Math.abs(Utils.pxToDp(distanceX) / 4), 10.f));
 
-                if (PlayerActivity.haveMedia) {
+                if (hasMedia()) {
                     if (gestureScrollX > 0) {
                         if (seekStart + seekChange - SEEK_STEP  * distanceDiff >= 0) {
-                            PlayerActivity.player.setSeekParameters(SeekParameters.PREVIOUS_SYNC);
+                            player.setSeekParameters(SeekParameters.PREVIOUS_SYNC);
                             seekChange -= SEEK_STEP * distanceDiff;
                             position = seekStart + seekChange;
-                            PlayerActivity.player.seekTo(position);
+                            player.seekTo(position);
                         }
                     } else {
-                        PlayerActivity.player.setSeekParameters(SeekParameters.NEXT_SYNC);
+                        player.setSeekParameters(SeekParameters.NEXT_SYNC);
                         if (seekMax == C.TIME_UNSET) {
                             seekChange += SEEK_STEP * distanceDiff;
                             position = seekStart + seekChange;
-                            PlayerActivity.player.seekTo(position);
+                            player.seekTo(position);
                         } else if (seekStart + seekChange + SEEK_STEP < seekMax) {
                             seekChange += SEEK_STEP  * distanceDiff;
                             position = seekStart + seekChange;
-                            PlayerActivity.player.seekTo(position);
+                            player.seekTo(position);
                         }
                     }
                     setCustomErrorMessage(Utils.formatMilisSign(seekChange));
@@ -328,14 +361,17 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
         if (gestureOrientation == Orientation.VERTICAL || gestureOrientation == Orientation.UNKNOWN) {
             gestureScrollY += distanceY;
             if (Math.abs(gestureScrollY) > SCROLL_STEP) {
+                BrightnessControl brightnessControl = mBridge != null ? mBridge.getBrightnessControl() : null;
                 if (gestureOrientation == Orientation.UNKNOWN) {
                     canBoostVolume = Utils.isVolumeMax(mAudioManager);
-                    canSetAutoBrightness = PlayerActivity.mBrightnessControl.currentBrightnessLevel <= 0;
+                    canSetAutoBrightness = brightnessControl != null && brightnessControl.currentBrightnessLevel <= 0;
                 }
                 gestureOrientation = Orientation.VERTICAL;
 
                 if (motionEvent.getX() < (float)(getWidth() / 2)) {
-                    PlayerActivity.mBrightnessControl.changeBrightness(this, gestureScrollY > 0, canSetAutoBrightness);
+                    if (brightnessControl != null) {
+                        brightnessControl.changeBrightness(this, gestureScrollY > 0, canSetAutoBrightness);
+                    }
                 } else {
                     Utils.adjustVolume(mAudioManager, this, gestureScrollY > 0, canBoostVolume);
                 }
@@ -349,7 +385,8 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
 
     @Override
     public void onLongPress(MotionEvent motionEvent) {
-        if (PlayerActivity.player == null || !PlayerActivity.haveMedia)
+        ExoPlayer player = getPlayerInstance();
+        if (player == null || !hasMedia())
             return;
 
         // Exclude edge areas
@@ -361,9 +398,9 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
             return;
 
         isTapAndHoldActive = true;
-        wasPlayingBeforeTapAndHold = PlayerActivity.player.isPlaying();
+        wasPlayingBeforeTapAndHold = player.isPlaying();
         try {
-            originalPlaybackSpeed = PlayerActivity.player.getPlaybackParameters().speed;
+            originalPlaybackSpeed = player.getPlaybackParameters().speed;
         } catch (Exception e) {
             originalPlaybackSpeed = 1.0f;
         }
@@ -371,17 +408,17 @@ public class CustomStyledPlayerView extends StyledPlayerView implements GestureD
         speedDragLastX = motionEvent.getX();
         speedAccumulatedDeltaX = 0f;
 
-        if (PlayerActivity.controllerVisible) {
+        if (mBridge != null && mBridge.isControllerVisible()) {
             hideController();
         }
         setControllerAutoShow(false);
 
-        PlayerActivity.player.setPlaybackParameters(
-            PlayerActivity.player.getPlaybackParameters().withSpeed(tapAndHoldSpeed)
+        player.setPlaybackParameters(
+            player.getPlaybackParameters().withSpeed(tapAndHoldSpeed)
         );
 
         if (!wasPlayingBeforeTapAndHold) {
-            PlayerActivity.player.play();
+            player.play();
         }
 
         performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);

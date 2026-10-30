@@ -239,7 +239,7 @@ public final class SubtitleGenerator {
             models = packages.acquire(job.pack);
             packages.verifyInstalled(models);
             job.checkCancelled();
-            recognizer = createRecognizer(models);
+            recognizer = createRecognizer(models, context);
             vad = createVad(models);
             SubtitleTimeline timeline = new SubtitleTimeline();
             int chunkCount = (int) ((durationMs + CHUNK_MS - 1) / CHUNK_MS);
@@ -370,12 +370,21 @@ public final class SubtitleGenerator {
         return String.format(Locale.US, "%.3f", millis / 1000.0);
     }
 
-    private static OfflineRecognizer createRecognizer(CaptionPackages.Lease models) {
+    private static OfflineRecognizer createRecognizer(CaptionPackages.Lease models, Context context) {
+        Prefs prefs = new Prefs(context);
         OfflineWhisperModelConfig whisper = new OfflineWhisperModelConfig();
         whisper.setEncoder(new File(models.directory, "encoder.onnx").getAbsolutePath());
         whisper.setDecoder(new File(models.directory, "decoder.onnx").getAbsolutePath());
-        whisper.setLanguage(models.pack.language);
-        whisper.setTask(models.pack.task);
+
+        String lang = prefs.captionLanguage;
+        if (lang == null || "auto".equalsIgnoreCase(lang)) {
+            lang = ""; // Empty string instructs Whisper to auto-detect the spoken language!
+        }
+        whisper.setLanguage(lang);
+
+        String task = prefs.captionTranslate ? "translate" : "transcribe";
+        whisper.setTask(task);
+
         whisper.setEnableTokenTimestamps(models.pack.aligned);
         whisper.setEnableSegmentTimestamps(false);
         OfflineModelConfig model = new OfflineModelConfig();

@@ -6,6 +6,9 @@ import android.os.*;
 import android.text.InputType;
 import android.view.*;
 import android.widget.*;
+import androidx.activity.OnBackPressedCallback;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.widget.Toolbar;
@@ -24,8 +27,22 @@ public final class SubtitleEditorActivity extends AppCompatActivity {
     private Uri media;private CaptionPack pack;private String path;private File draft;
     private boolean dirty,busy=true,exportVtt;
     private TextView status;private RecyclerView list;private Rows rows;
+    private final ActivityResultLauncher<Intent> exportLauncher = registerForActivityResult(
+            new ActivityResultContracts.StartActivityForResult(),
+            result -> {
+                if (result.getResultCode() != RESULT_OK || result.getData() == null || result.getData().getData() == null) return;
+                Uri uri = result.getData().getData();
+                if (busy || cues.isEmpty()) { pendingExport = uri; return; }
+                export(uri);
+            });
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                handleBackPressed();
+            }
+        });
         media=getIntent().getData();path=getIntent().getStringExtra("path");
         pack=CaptionPack.find(state==null?CaptionPackages.get(this).selected().id:state.getString("pack"));
         draft=state==null?new File(getCacheDir(),"subtitle-draft-"+UUID.randomUUID()+".srt"):new File(state.getString("draft"));
@@ -33,7 +50,7 @@ public final class SubtitleEditorActivity extends AppCompatActivity {
         if(state!=null) { exportVtt=state.getBoolean("vtt");pendingExport=state.getParcelable("pendingExport"); }
         LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);setContentView(page);
         Toolbar toolbar=new Toolbar(this);toolbar.setTitle("Edit subtitles");toolbar.setNavigationIcon(R.drawable.ic_arrow_back_white_24dp);
-        toolbar.setNavigationOnClickListener(v->onBackPressed());page.addView(toolbar,new LinearLayout.LayoutParams(-1,Utils.dpToPx(56)));
+        toolbar.setNavigationOnClickListener(v->getOnBackPressedDispatcher().onBackPressed());page.addView(toolbar,new LinearLayout.LayoutParams(-1,Utils.dpToPx(56)));
         status=new TextView(this);status.setTextSize(14);status.setPadding(16,8,16,8);status.setText("Loading subtitles…");page.addView(status);
         list=new RecyclerView(this);list.setLayoutManager(new LinearLayoutManager(this));rows=new Rows();list.setAdapter(rows);
         page.addView(list,new LinearLayout.LayoutParams(-1,0,1));
@@ -75,7 +92,7 @@ public final class SubtitleEditorActivity extends AppCompatActivity {
         EditText start=field(form,"Start · hh:mm:ss.mmm",time(original.startMs),false);
         EditText end=field(form,"End · hh:mm:ss.mmm",time(original.endMs),false);
         EditText text=field(form,"Subtitle text",original.text,true);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Caption "+(index+1)).setView(form)
+        AlertDialog dialog=new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle("Caption "+(index+1)).setView(form)
                 .setPositiveButton("Apply",null).setNegativeButton(android.R.string.cancel,null).create();
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v-> {
             try {
@@ -91,7 +108,7 @@ public final class SubtitleEditorActivity extends AppCompatActivity {
         LinearLayout form=new LinearLayout(this);form.setOrientation(LinearLayout.VERTICAL);form.setPadding(24,0,24,0);
         EditText value=field(form,"Milliseconds: +500 later, -500 earlier","0",false);
         value.setInputType(InputType.TYPE_CLASS_NUMBER|InputType.TYPE_NUMBER_FLAG_SIGNED);
-        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Shift all subtitle times").setMessage("Negative offsets discard captions that end before the video starts.").setView(form)
+        AlertDialog dialog=new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle("Shift all subtitle times").setMessage("Negative offsets discard captions that end before the video starts.").setView(form)
                 .setPositiveButton("Apply",null).setNegativeButton(android.R.string.cancel,null).create();
         dialog.setOnShowListener(d->dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v-> {
             try { cues=SubtitleDocument.shifted(cues,Long.parseLong(value.getText().toString()));changed();rows.notifyDataSetChanged();dialog.dismiss(); }
@@ -118,18 +135,12 @@ public final class SubtitleEditorActivity extends AppCompatActivity {
         });
     }
     private void chooseExport() {
-        new AlertDialog.Builder(this).setTitle("Export subtitles").setItems(new String[]{"SRT","VTT"},(d,w)-> {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setTitle("Export subtitles").setItems(new String[]{"SRT","VTT"},(d,w)-> {
             exportVtt=w==1;
             Intent intent=new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
                     .setType(exportVtt?"text/vtt":"application/x-subrip").putExtra(Intent.EXTRA_TITLE,"subtitles."+(exportVtt?"vtt":"srt"));
-            try { startActivityForResult(intent,4201); }catch(ActivityNotFoundException e) { error(e); }
+            try { exportLauncher.launch(intent); }catch(ActivityNotFoundException e) { error(e); }
         }).show();
-    }
-    @Override protected void onActivityResult(int request,int result,Intent data) {
-        super.onActivityResult(request,result,data);
-        if(request!=4201 || result!=RESULT_OK || data==null || data.getData()==null)return;
-        if(busy || cues.isEmpty()) { pendingExport=data.getData();return; }
-        export(data.getData());
     }
     private void export(Uri destination) {
         boolean vtt=exportVtt;List<SubtitleTimeline.Cue> copy=new ArrayList<>(cues);busy=true;
@@ -142,10 +153,10 @@ public final class SubtitleEditorActivity extends AppCompatActivity {
         });
     }
     private void error(Exception e) { if(isDestroyed())return;busy=false;updateStatus();Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show(); }
-    @Override public void onBackPressed() {
+    private void handleBackPressed() {
         if(busy)return;
         if(!dirty) { finish();return; }
-        new AlertDialog.Builder(this).setMessage("Save subtitle changes?").setPositiveButton("Save",(d,w)->save())
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(this).setMessage("Save subtitle changes?").setPositiveButton("Save",(d,w)->save())
                 .setNegativeButton("Discard",(d,w)-> { io.execute(()->draft.delete());finish(); }).setNeutralButton("Keep editing",null).show();
     }
     @Override protected void onSaveInstanceState(Bundle out) {

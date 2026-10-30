@@ -4,14 +4,15 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class CaptionPackTest {
-    @Test public void hindiUsesMultilingualTranslationAndSeparateCacheIdentity() {
-        assertEquals("hi",CaptionPack.HINDI.language);
-        assertEquals("translate",CaptionPack.HINDI.task);
-        assertFalse(CaptionPack.HINDI.aligned);
-        assertNotEquals(CaptionPack.ENGLISH.id,CaptionPack.HINDI.id);
-        assertNotEquals(CaptionPack.ENGLISH.cacheIdentity(),CaptionPack.HINDI.cacheIdentity());
-        assertTrue(CaptionPack.ENGLISH.cacheIdentity().contains(CaptionPack.ALIGNED_DECODER_SHA256));
+    @Test public void multilingualPackSupportsAutoDetectAndTranscribeDefault() {
+        assertEquals("whisper-base-multilingual-v1", CaptionPack.MULTILINGUAL.id);
+        assertEquals("auto", CaptionPack.MULTILINGUAL.language);
+        assertEquals("transcribe", CaptionPack.MULTILINGUAL.task);
+        assertFalse(CaptionPack.MULTILINGUAL.aligned);
+        assertNotNull(CaptionPack.MULTILINGUAL.cacheIdentity());
+        assertTrue(CaptionPack.MULTILINGUAL.cacheIdentity().startsWith("whisper-base-multilingual-v1:auto:transcribe"));
     }
+
     @Test public void catalogIsPinnedToHashesAndHttps() {
         for(CaptionPack pack:CaptionPack.ALL)for(CaptionPack.Asset asset:pack.assets) {
             assertTrue(asset.url.startsWith("https://"));
@@ -19,9 +20,13 @@ public class CaptionPackTest {
             assertTrue(asset.bytes>0);
         }
     }
+
     @Test public void sizeIncludesAllRequiredParts() {
-        assertEquals(104271045L,CaptionPack.ENGLISH.downloadBytes());
-        assertEquals(161253144L,CaptionPack.HINDI.downloadBytes());
-        assertSame(CaptionPack.ENGLISH,CaptionPack.find("unknown"));
+        assertEquals(161253144L, CaptionPack.MULTILINGUAL.downloadBytes());
+        assertSame(CaptionPack.MULTILINGUAL, CaptionPack.find("unknown"));
+        assertSame(CaptionPack.MULTILINGUAL, CaptionPack.find("hindi-base-translate-v1"));
+        assertSame(CaptionPack.MULTILINGUAL, CaptionPack.find("english-tiny-aligned-v1"));
+        assertSame(CaptionPack.MULTILINGUAL, CaptionPack.ENGLISH);
+        assertSame(CaptionPack.MULTILINGUAL, CaptionPack.HINDI);
     }
 }

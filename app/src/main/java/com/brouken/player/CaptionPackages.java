@@ -59,9 +59,15 @@ public final class CaptionPackages {
             executor.execute(this::migrateEnglish);
         }
     }
-    public CaptionPack selected() { return CaptionPack.find(prefs.getString("selected", CaptionPack.ENGLISH.id)); }
+    public CaptionPack selected() { return CaptionPack.find(prefs.getString("selected", CaptionPack.MULTILINGUAL.id)); }
     public void select(CaptionPack pack) { prefs.edit().putString("selected",pack.id).apply(); }
-    private File installedDir(CaptionPack pack) { return new File(context.getNoBackupFilesDir(), "caption-packs/"+pack.id); }
+    private File installedDir(CaptionPack pack) {
+        File dir = new File(context.getNoBackupFilesDir(), "caption-packs/" + pack.id);
+        if (dir.exists()) return dir;
+        File legacy = new File(context.getNoBackupFilesDir(), "caption-packs/hindi-base-translate-v1");
+        if (legacy.exists()) return legacy;
+        return dir;
+    }
     private File downloadDir(CaptionPack pack) throws IOException {
         File base=context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
         if (base==null) throw new IOException("Download storage is unavailable");

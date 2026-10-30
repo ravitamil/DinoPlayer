@@ -12,16 +12,16 @@ import android.widget.TextView;
 import android.widget.ProgressBar;
 import android.content.res.ColorStateList;
 import android.widget.Toast;
-import com.google.android.exoplayer2.SimpleExoPlayer;
-import com.google.android.exoplayer2.text.Cue;
-import com.google.android.exoplayer2.ui.CaptionStyleCompat;
-import com.google.android.exoplayer2.ui.SubtitleView;
+import androidx.media3.common.text.Cue;
+import androidx.media3.exoplayer.ExoPlayer;
+import androidx.media3.ui.CaptionStyleCompat;
+import androidx.media3.ui.SubtitleView;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 /** Displays incremental captions against the media clock without replacing/rebuffering the video. */
 public final class LiveSubtitleController {
-    public interface PlayerSource { SimpleExoPlayer get(); }
+    public interface PlayerSource { ExoPlayer get(); }
     public interface Completion { void accept(Uri uri); }
     private final Activity activity;
     private final CustomStyledPlayerView playerView;
@@ -35,6 +35,7 @@ public final class LiveSubtitleController {
     private SubtitleGenerator.Job job;
     private SubtitleTimeline.Cue displayed;
     private boolean enabled;
+    private long subtitleOffsetMs = 0L;
     private int generation;
     private int percent;
     private int renderedPercent=-1;
@@ -105,7 +106,7 @@ public final class LiveSubtitleController {
         status.setOnClickListener(null);
         enabled = true;
         int request = generation;
-        SimpleExoPlayer current = player.get();
+        ExoPlayer current = player.get();
         status.setText(activity.getString(R.string.captions_preparing_pack, selected.title));
         job = SubtitleGenerator.generateSubtitlesAsync(activity, uri, path,
                 current != null ? current.getCurrentPosition() : 0, selected, force, false, new SubtitleGenerator.SubtitleCallback() {
@@ -153,9 +154,9 @@ public final class LiveSubtitleController {
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
-            SimpleExoPlayer current = player.get();
+            ExoPlayer current = player.get();
             if (current != null) {
-                long position = current.getCurrentPosition();
+                long position = current.getCurrentPosition() + subtitleOffsetMs;
                 if (job != null) job.updatePlaybackPosition(position);
                 SubtitleTimeline.Cue cue = enabled ? timeline.at(position) : null;
                 if (displayed != cue) {
@@ -164,7 +165,7 @@ public final class LiveSubtitleController {
                             SubtitleAppearance.text(cue.text)));
                 }
                 SubtitleView nativeSubtitles = playerView.getSubtitleView();
-                if (nativeSubtitles != null) nativeSubtitles.setVisibility(!timeline.isEmpty() ? View.INVISIBLE : View.VISIBLE);
+                if (nativeSubtitles != null) nativeSubtitles.setVisibility((enabled && !timeline.isEmpty()) ? View.INVISIBLE : View.VISIBLE);
                 if (job != null && !job.isCancelling() && enabled && controlsVisible && !inPip) {
                     boolean ready = false;
                     for (long[] range : completedRanges) if (position >= range[0] && position < range[1]) ready = true;
@@ -192,7 +193,20 @@ public final class LiveSubtitleController {
     }
     public void toggle() {
         enabled = !enabled;
+        if (!enabled) {
+            subtitles.setCues(Collections.emptyList());
+            SubtitleView nativeSubtitles = playerView.getSubtitleView();
+            if (nativeSubtitles != null) nativeSubtitles.setVisibility(View.VISIBLE);
+        }
         updateIndicator();
+    }
+
+    public void setSubtitleOffsetMs(long offsetMs) {
+        this.subtitleOffsetMs = offsetMs;
+    }
+
+    public int getPercent() {
+        return percent;
     }
     private void showRetry(String text,Uri uri,String path,Completion complete,Runnable changed,boolean force) {
         hasNotice=true; status.setText(text);

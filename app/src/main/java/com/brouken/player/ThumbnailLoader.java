@@ -44,11 +44,12 @@ public class ThumbnailLoader {
 
     private static final class Target {
         final java.lang.ref.WeakReference<ImageView> image;
-        final java.lang.ref.WeakReference<TextView> duration, info;
+        final java.lang.ref.WeakReference<TextView> duration, resolution, info;
         final String baseInfo;
-        Target(ImageView image, TextView duration, TextView info, String baseInfo) {
+        Target(ImageView image, TextView duration, TextView resolution, TextView info, String baseInfo) {
             this.image=new java.lang.ref.WeakReference<>(image);
             this.duration=new java.lang.ref.WeakReference<>(duration);
+            this.resolution=new java.lang.ref.WeakReference<>(resolution);
             this.info=new java.lang.ref.WeakReference<>(info);
             this.baseInfo=baseInfo;
         }
@@ -81,19 +82,24 @@ public class ThumbnailLoader {
         load(context,uri,image,duration,info,baseInfo, "");
     }
     public void load(Context context,Uri uri,ImageView image,TextView duration,TextView info,String baseInfo,String version) {
+        load(context, uri, image, duration, null, info, baseInfo, version);
+    }
+    public void load(Context context,Uri uri,ImageView image,TextView duration,TextView resolution,TextView info,String baseInfo,String version) {
         if(image==null)return;
         if(uri==null) {
             image.setTag(null); image.setImageDrawable(null);
             if(duration!=null)duration.setVisibility(View.GONE);
+            if(resolution!=null)resolution.setVisibility(View.GONE);
             if(info!=null)info.setText(baseInfo);
             return;
         }
         String key=uri+"|"+version+"|"+generation;
         image.setTag(key);
         ThumbnailResult cached=mMemoryCache.get(key);
-        if(cached!=null) { applyResult(cached,image,duration,info,baseInfo); return; }
+        if(cached!=null) { applyResult(cached,image,duration,resolution,info,baseInfo); return; }
         image.setImageDrawable(null);
         if(duration!=null)duration.setVisibility(View.GONE);
+        if(resolution!=null)resolution.setVisibility(View.GONE);
         if(info!=null)info.setText(baseInfo);
         synchronized(this) {
             Request request=active.get(key);
@@ -104,7 +110,7 @@ public class ThumbnailLoader {
                 request=new Request(context.getApplicationContext(),uri,key,generation);
                 pending.put(key,request);
             }
-            request.targets.add(new Target(image,duration,info,baseInfo));
+            request.targets.add(new Target(image,duration,resolution,info,baseInfo));
             if(workers<2) { workers++; mExecutor.execute(this::drainRequests); }
         }
     }
@@ -134,7 +140,7 @@ public class ThumbnailLoader {
                 for(Target target:targets) {
                     ImageView view=target.image.get();
                     if(view!=null && request.key.equals(view.getTag()))
-                        applyResult(ready,view,target.duration.get(),target.info.get(),target.baseInfo);
+                        applyResult(ready,view,target.duration.get(),target.resolution.get(),target.info.get(),target.baseInfo);
                 }
             });
         }
@@ -206,6 +212,10 @@ public class ThumbnailLoader {
     }
 
     private void applyResult(ThumbnailResult result, ImageView imageView, TextView durationView, TextView infoView, String baseInfo) {
+        applyResult(result, imageView, durationView, null, infoView, baseInfo);
+    }
+
+    private void applyResult(ThumbnailResult result, ImageView imageView, TextView durationView, TextView resolutionView, TextView infoView, String baseInfo) {
         if (result.bitmap != null) {
             imageView.setImageBitmap(result.bitmap);
         } else {
@@ -221,9 +231,18 @@ public class ThumbnailLoader {
             }
         }
 
+        if (resolutionView != null) {
+            if (result.resolution != null && !result.resolution.isEmpty()) {
+                resolutionView.setText(result.resolution);
+                resolutionView.setVisibility(View.VISIBLE);
+            } else {
+                resolutionView.setVisibility(View.GONE);
+            }
+        }
+
         if (infoView != null) {
             StringBuilder sb = new StringBuilder();
-            if (result.resolution != null && !result.resolution.isEmpty()) {
+            if (result.resolution != null && !result.resolution.isEmpty() && resolutionView == null) {
                 sb.append(result.resolution).append(" • ");
             }
             if (baseInfo != null) {
@@ -330,8 +349,8 @@ public class ThumbnailLoader {
         int minDim = Math.min(width, height);
         if (minDim >= 2160) return "4K";
         if (minDim >= 1440) return "2K";
-        if (minDim >= 1080) return "1080p";
-        if (minDim >= 720) return "720p";
+        if (minDim >= 1080) return "FHD";
+        if (minDim >= 720) return "HD";
         if (minDim >= 480) return "480p";
         return minDim + "p";
     }

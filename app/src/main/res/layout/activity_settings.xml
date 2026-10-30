@@ -6,56 +6,54 @@
     android:background="@color/app_background"
     android:orientation="vertical">
 
+    <!-- Material 3 Top AppBar with liftOnScroll -->
     <com.google.android.material.appbar.AppBarLayout
+        android:id="@+id/app_bar_settings"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@color/app_background"
-        app:elevation="0dp">
+        app:elevation="0dp"
+        app:liftOnScroll="true">
 
         <com.google.android.material.appbar.MaterialToolbar
             android:id="@+id/toolbar_settings"
             android:layout_width="match_parent"
-            android:layout_height="72dp"
-            app:titleTextAppearance="@style/TextAppearance.JustPlayer.Toolbar"
+            android:layout_height="?attr/actionBarSize"
             android:background="@color/app_background"
             app:navigationIcon="@drawable/ic_arrow_back_white_24dp"
-            app:title="Settings"
-            app:titleTextColor="@color/white"
-            app:theme="@style/ThemeOverlay.MaterialComponents.Dark.ActionBar" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:background="@color/app_border" />
+            app:title="@string/settings_title"
+            app:titleTextAppearance="@style/TextAppearance.JustPlayer.Toolbar"
+            app:titleTextColor="@color/white" />
 
     </com.google.android.material.appbar.AppBarLayout>
 
-    <ScrollView
+    <androidx.core.widget.NestedScrollView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:clipToPadding="false"
         android:overScrollMode="never"
-        android:paddingBottom="32dp">
+        android:paddingBottom="44dp">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingStart="16dp"
-            android:paddingTop="16dp"
+            android:paddingTop="12dp"
             android:paddingEnd="16dp">
 
-            <!-- SECTION 1: LIBRARY & SCANNING -->
+            <!-- ========================================= -->
+            <!-- SECTION 1: LIBRARY & STORAGE OPTIONS      -->
+            <!-- ========================================= -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:layout_marginBottom="8dp"
-                android:letterSpacing="0.01"
-                android:text="Library"
-                android:textColor="@color/green"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:layout_marginBottom="10dp"
+                android:text="Library &amp; storage"
+                android:textColor="@color/player_accent"
+                android:textSize="13.5sp"
+                android:fontFamily="sans-serif-medium" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -64,7 +62,8 @@
                 app:cardBackgroundColor="@color/app_surface"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp">
+                app:strokeColor="@color/app_border"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -80,17 +79,24 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_folder_24dp"
-                            app:tint="@color/green" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_background">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_folder_24dp"
+                                app:tint="@color/player_accent" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -102,10 +108,10 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Scanning mode"
+                                android:text="Folder scan mode"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:id="@+id/text_scan_mode_summary"
@@ -129,7 +135,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="56dp"
+                        android:layout_marginStart="72dp"
                         android:background="@color/app_border" />
 
                     <!-- Included Folders Row -->
@@ -141,17 +147,24 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_folder_open_24dp"
-                            app:tint="#B0B0B0" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_background">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_folder_open_24dp"
+                                app:tint="@color/player_accent" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -166,14 +179,14 @@
                                 android:text="Included folders"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:id="@+id/text_included_folders_summary"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Manage folders to include in scan"
+                                android:text="Choose folders to include in library"
                                 android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
@@ -190,7 +203,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="56dp"
+                        android:layout_marginStart="72dp"
                         android:background="@color/app_border" />
 
                     <!-- Excluded Folders Row -->
@@ -202,17 +215,24 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_folder_24dp"
-                            app:tint="#B0B0B0" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_neutral">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_folder_24dp"
+                                app:tint="@color/app_text_muted" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -227,14 +247,14 @@
                                 android:text="Excluded folders"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:id="@+id/text_excluded_folders_summary"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Manage folders to exclude from scan"
+                                android:text="Choose folders to exclude from library"
                                 android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
@@ -251,7 +271,7 @@
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="56dp"
+                        android:layout_marginStart="72dp"
                         android:background="@color/app_border" />
 
                     <!-- Show Hidden Files Switch Row -->
@@ -263,17 +283,24 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_visibility_24dp"
-                            app:tint="@color/green" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_background">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_visibility_24dp"
+                                app:tint="@color/player_accent" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -285,16 +312,16 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Show hidden files and folders"
+                                android:text="Show hidden videos and folders"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Scan .hidden and dot folders within scope"
+                                android:text="Include hidden media files and folders"
                                 android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
@@ -304,18 +331,18 @@
                             android:id="@+id/switch_show_hidden"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:thumbTint="@color/player_switch_thumb"
-                            app:trackTint="@color/player_switch_track" />
+                            app:thumbTint="@color/player_accent"
+                            app:trackTint="@color/player_accent_soft" />
 
                     </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="56dp"
+                        android:layout_marginStart="72dp"
                         android:background="@color/app_border" />
 
-                    <!-- Storage Permission Row -->
+                    <!-- All Files Access Permission Row -->
                     <LinearLayout
                         android:id="@+id/layout_manage_storage_permission"
                         android:layout_width="match_parent"
@@ -324,18 +351,25 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:id="@+id/icon_manage_storage"
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_settings_24dp"
-                            app:tint="#B0B0B0" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_neutral">
+
+                            <ImageView
+                                android:id="@+id/icon_manage_storage"
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_settings_24dp"
+                                app:tint="@color/app_text_muted" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -351,14 +385,14 @@
                                 android:text="All files access"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:id="@+id/text_manage_storage_status"
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Required to scan .hidden folders on Android 11+"
+                                android:text="Allow access to scan all folders on device"
                                 android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
@@ -369,9 +403,9 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="ALLOWED"
-                            android:textColor="@color/green"
+                            android:textColor="@color/player_accent"
                             android:textSize="12sp"
-                            android:textStyle="bold" />
+                            android:fontFamily="sans-serif-bold" />
 
                     </LinearLayout>
 
@@ -379,17 +413,18 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- SECTION 2: PLAYBACK -->
+            <!-- ========================================= -->
+            <!-- SECTION 2: PLAYBACK OPTIONS               -->
+            <!-- ========================================= -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:layout_marginBottom="8dp"
-                android:letterSpacing="0.01"
+                android:layout_marginBottom="10dp"
                 android:text="Playback"
-                android:textColor="@color/green"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/player_accent"
+                android:textSize="13.5sp"
+                android:fontFamily="sans-serif-medium" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -398,7 +433,8 @@
                 app:cardBackgroundColor="@color/app_surface"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp">
+                app:strokeColor="@color/app_border"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -414,17 +450,24 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_skip_next_24dp"
-                            app:tint="@color/green" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_background">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_skip_next_24dp"
+                                app:tint="@color/player_accent" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -439,13 +482,13 @@
                                 android:text="Autoplay next video"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Play next video in sorted list order automatically"
+                                android:text="Automatically play the next video in folder"
                                 android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
@@ -455,8 +498,8 @@
                             android:id="@+id/switch_autoplay_next"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:thumbTint="@color/player_switch_thumb"
-                            app:trackTint="@color/player_switch_track" />
+                            app:thumbTint="@color/player_accent"
+                            app:trackTint="@color/player_accent_soft" />
 
                     </LinearLayout>
 
@@ -464,17 +507,18 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <!-- SECTION 3: SUBTITLES & AI -->
+            <!-- ========================================= -->
+            <!-- SECTION 3: CAPTIONS & SPEECH-TO-TEXT      -->
+            <!-- ========================================= -->
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="8dp"
-                android:layout_marginBottom="8dp"
-                android:letterSpacing="0.01"
-                android:text="Captions"
-                android:textColor="@color/green"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:layout_marginBottom="10dp"
+                android:text="Subtitles &amp; captions"
+                android:textColor="@color/player_accent"
+                android:textSize="13.5sp"
+                android:fontFamily="sans-serif-medium" />
 
             <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
@@ -483,7 +527,8 @@
                 app:cardBackgroundColor="@color/app_surface"
                 app:cardCornerRadius="20dp"
                 app:cardElevation="0dp"
-                app:strokeWidth="0dp">
+                app:strokeColor="@color/app_border"
+                app:strokeWidth="1dp">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -499,17 +544,24 @@
                         android:clickable="true"
                         android:focusable="true"
                         android:gravity="center_vertical"
-                        android:minHeight="68dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
                         android:paddingTop="12dp"
                         android:paddingEnd="16dp"
                         android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_subtitles_24dp"
-                            app:tint="@color/green" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_background">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_subtitles_24dp"
+                                app:tint="@color/player_accent" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -521,16 +573,16 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Create captions while watching"
+                                android:text="Generate subtitles while watching"
                                 android:textColor="@color/white"
                                 android:textSize="15sp"
-                                android:textStyle="bold" />
+                                android:fontFamily="sans-serif-medium" />
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
                                 android:layout_marginTop="2dp"
-                                android:text="Create captions while you watch. Processing stays on this device."
+                                android:text="Generate on-device subtitles automatically without internet"
                                 android:textColor="@color/app_text_secondary"
                                 android:textSize="13sp" />
 
@@ -540,37 +592,44 @@
                             android:id="@+id/switch_live_captions"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            app:thumbTint="@color/player_switch_thumb"
-                            app:trackTint="@color/player_switch_track" />
+                            app:thumbTint="@color/player_accent"
+                            app:trackTint="@color/player_accent_soft" />
 
                     </LinearLayout>
 
                     <View
                         android:layout_width="match_parent"
                         android:layout_height="1dp"
-                        android:layout_marginStart="56dp"
+                        android:layout_marginStart="72dp"
                         android:background="@color/app_border" />
 
-                    <!-- Caption language -->
+                    <!-- Caption Language Row -->
                     <LinearLayout
                         android:id="@+id/row_caption_language"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
                         android:background="?attr/selectableItemBackground"
                         android:clickable="true"
                         android:focusable="true"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
                         android:gravity="center_vertical"
-                        android:minHeight="56dp"
+                        android:minHeight="72dp"
                         android:paddingStart="16dp"
-                        android:paddingTop="10dp"
+                        android:paddingTop="12dp"
                         android:paddingEnd="16dp"
-                        android:paddingBottom="10dp">
+                        android:paddingBottom="12dp">
 
-                        <ImageView
-                            android:layout_width="24dp"
-                            android:layout_height="24dp"
-                            android:src="@drawable/ic_movie_24dp"
-                            app:tint="@color/app_text_muted" />
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_neutral">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_movie_24dp"
+                                app:tint="@color/app_text_muted" />
+                        </FrameLayout>
 
                         <LinearLayout
                             android:layout_width="0dp"
@@ -582,19 +641,162 @@
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:text="Caption language"
+                                android:text="Subtitle language"
+                                android:textColor="@color/white"
+                                android:textSize="15sp"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:id="@+id/text_caption_language"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="English audio → English"
                                 android:textColor="@color/app_text_secondary"
-                                android:textSize="14sp" />
+                                android:textSize="13sp" />
+
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right_24dp"
+                            app:tint="@color/app_text_muted" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="72dp"
+                        android:background="@color/app_border" />
+
+                    <!-- Translate to English Switch Row -->
+                    <LinearLayout
+                        android:id="@+id/row_caption_translate"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:minHeight="72dp"
+                        android:paddingStart="16dp"
+                        android:paddingTop="12dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="12dp">
+
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_background">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_translate_24dp"
+                                app:tint="@color/player_accent" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
 
                             <TextView
                                 android:layout_width="wrap_content"
                                 android:layout_height="wrap_content"
-                                android:id="@+id/text_caption_language"
-                                android:text="English audio → English"
-                                android:textColor="@color/app_text_muted"
-                                android:textSize="12sp" />
+                                android:text="Translate to English subtitles"
+                                android:textColor="@color/white"
+                                android:textSize="15sp"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Translates non-English speech into English subtitles"
+                                android:textColor="@color/app_text_secondary"
+                                android:textSize="13sp" />
 
                         </LinearLayout>
+
+                        <com.google.android.material.switchmaterial.SwitchMaterial
+                            android:id="@+id/switch_caption_translate"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            app:thumbTint="@color/player_accent"
+                            app:trackTint="@color/player_accent_soft" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="72dp"
+                        android:background="@color/app_border" />
+
+                    <!-- Subtitle Appearance Row -->
+                    <LinearLayout
+                        android:id="@+id/row_subtitle_appearance"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackground"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:minHeight="72dp"
+                        android:paddingStart="16dp"
+                        android:paddingTop="12dp"
+                        android:paddingEnd="16dp"
+                        android:paddingBottom="12dp">
+
+                        <FrameLayout
+                            android:layout_width="40dp"
+                            android:layout_height="40dp"
+                            android:background="@drawable/m3_icon_container_neutral">
+
+                            <ImageView
+                                android:layout_width="22dp"
+                                android:layout_height="22dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_aspect_ratio_24dp"
+                                app:tint="@color/app_text_muted" />
+                        </FrameLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="16dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="@string/subtitle_appearance"
+                                android:textColor="@color/white"
+                                android:textSize="15sp"
+                                android:fontFamily="sans-serif-medium" />
+
+                            <TextView
+                                android:id="@+id/text_subtitle_appearance"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:textColor="@color/app_text_secondary"
+                                android:textSize="13sp" />
+
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:src="@drawable/ic_chevron_right_24dp"
+                            app:tint="@color/app_text_muted" />
 
                     </LinearLayout>
 
@@ -602,49 +804,103 @@
 
             </com.google.android.material.card.MaterialCardView>
 
-            <LinearLayout android:id="@+id/row_subtitle_appearance" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" android:minHeight="68dp"
-                android:padding="16dp" android:layout_marginBottom="16dp" android:background="?attr/selectableItemBackground"
-                android:clickable="true" android:focusable="true">
-                <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:text="@string/subtitle_appearance" android:textSize="16sp" android:textColor="@color/app_text" />
-                <TextView android:id="@+id/text_subtitle_appearance" android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:textSize="14sp" android:textColor="@color/app_text_secondary" android:layout_marginTop="4dp" />
-            </LinearLayout>
+            <!-- ========================================= -->
+            <!-- SECTION 4: OFFLINE PACKS & MAINTENANCE   -->
+            <!-- ========================================= -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginBottom="10dp"
+                android:text="Speech recognition engine"
+                android:textColor="@color/player_accent"
+                android:textSize="13.5sp"
+                android:fontFamily="sans-serif-medium" />
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginBottom="8dp" android:text="Offline subtitle packs"
-                android:textColor="@color/player_accent" android:textSize="14sp" android:textStyle="bold" />
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
-                android:layout_marginBottom="12dp" android:text="Download once, use offline. Video playback works without packs. Hindi translation may process behind playback."
-                android:textColor="@color/app_text_secondary" android:textSize="13sp" />
-            <LinearLayout android:id="@+id/caption_pack_rows" android:layout_width="match_parent"
-                android:layout_height="wrap_content" android:orientation="vertical" />
-            <com.google.android.material.button.MaterialButton android:id="@+id/button_clear_cache"
-                style="@style/Widget.MaterialComponents.Button.TextButton" android:layout_width="match_parent"
-                android:layout_height="52dp" android:text="Clear preview and caption cache" android:textAllCaps="false"
-                android:textColor="@color/app_text_secondary" />
-
-            <!-- Rescan Library Button -->
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/button_rescan_library"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            <com.google.android.material.card.MaterialCardView
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="8dp"
-                android:text="Refresh library"
-                android:textAllCaps="false"
-                android:textColor="@color/green"
-                android:textSize="14sp"
-                app:cornerRadius="12dp"
-                app:icon="@drawable/ic_refresh_24dp"
-                app:iconGravity="textStart"
-                app:iconTint="@color/green"
-                app:strokeColor="@color/green"
-                app:strokeWidth="1dp" />
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="24dp"
+                app:cardBackgroundColor="@color/app_surface"
+                app:cardCornerRadius="20dp"
+                app:cardElevation="0dp"
+                app:strokeColor="@color/app_border"
+                app:strokeWidth="1dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="On-device speech model"
+                        android:textColor="@color/white"
+                        android:textSize="15sp"
+                        android:fontFamily="sans-serif-medium" />
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:layout_marginBottom="14dp"
+                        android:text="Download the multilingual speech engine for private, offline on-device subtitle generation across 99 languages."
+                        android:textColor="@color/app_text_secondary"
+                        android:textSize="13sp" />
+
+                    <!-- Dynamically populated pack rows -->
+                    <LinearLayout
+                        android:id="@+id/caption_pack_rows"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginTop="10dp"
+                        android:layout_marginBottom="12dp"
+                        android:background="@color/app_border" />
+
+                    <!-- Clear Cache Button -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/button_clear_cache"
+                        style="@style/Widget.MaterialComponents.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:text="Clear thumbnail and subtitle cache"
+                        android:textAllCaps="false"
+                        android:textColor="@color/app_text_secondary"
+                        android:textSize="13.5sp"
+                        app:cornerRadius="14dp" />
+
+                    <!-- Rescan Library Button -->
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/button_rescan_library"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="52dp"
+                        android:layout_marginTop="8dp"
+                        android:text="Refresh library"
+                        android:textAllCaps="false"
+                        android:textColor="@color/player_accent"
+                        android:textSize="14.5sp"
+                        android:fontFamily="sans-serif-medium"
+                        app:cornerRadius="16dp"
+                        app:icon="@drawable/ic_refresh_24dp"
+                        app:iconGravity="textStart"
+                        app:iconTint="@color/player_accent"
+                        app:strokeColor="@color/player_accent"
+                        app:strokeWidth="1dp" />
+
+                </LinearLayout>
+
+            </com.google.android.material.card.MaterialCardView>
 
         </LinearLayout>
 
-    </ScrollView>
+    </androidx.core.widget.NestedScrollView>
 
 </LinearLayout>

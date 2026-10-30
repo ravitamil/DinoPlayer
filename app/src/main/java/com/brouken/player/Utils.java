@@ -3,11 +3,13 @@ package com.brouken.player;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.Context;
+import android.content.ContextWrapper;
 import android.content.DialogInterface;
 import android.content.pm.ActivityInfo;
 import android.content.res.Resources;
 import android.database.Cursor;
 import android.media.AudioManager;
+import android.media.audiofx.LoudnessEnhancer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -28,7 +30,10 @@ import com.arthenica.ffmpegkit.FFprobeKit;
 import com.arthenica.ffmpegkit.MediaInformation;
 import com.arthenica.ffmpegkit.MediaInformationSession;
 import com.arthenica.ffmpegkit.StreamInformation;
-import com.google.android.exoplayer2.Format;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import androidx.media3.common.Format;
 import com.obsez.android.lib.filechooser.ChooserDialog;
 
 import java.io.File;
@@ -60,27 +65,50 @@ class Utils {
         }
     }
 
-    public static void hideSystemUi(final CustomStyledPlayerView playerView) {
-        playerView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
-                | View.SYSTEM_UI_FLAG_FULLSCREEN
-                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+    public static Activity getActivity(Context context) {
+        while (context instanceof ContextWrapper) {
+            if (context instanceof Activity) {
+                return (Activity) context;
+            }
+            context = ((ContextWrapper) context).getBaseContext();
+        }
+        return null;
+    }
 
-        // demo
-//        playerView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
-//                | View.SYSTEM_UI_FLAG_FULLSCREEN
-//                | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-//                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-//                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-//                | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+    public static void hideSystemUi(final CustomStyledPlayerView playerView) {
+        if (playerView == null) return;
+        Activity activity = getActivity(playerView.getContext());
+        Window window = activity != null ? activity.getWindow() : null;
+        if (window != null) {
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, playerView);
+            if (controller != null) {
+                controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                controller.hide(WindowInsetsCompat.Type.systemBars());
+            }
+        } else {
+            playerView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LOW_PROFILE
+                    | View.SYSTEM_UI_FLAG_FULLSCREEN
+                    | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION);
+        }
     }
 
     public static void showSystemUi(final CustomStyledPlayerView playerView) {
-        playerView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        if (playerView == null) return;
+        Activity activity = getActivity(playerView.getContext());
+        Window window = activity != null ? activity.getWindow() : null;
+        if (window != null) {
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, playerView);
+            if (controller != null) {
+                controller.show(WindowInsetsCompat.Type.systemBars());
+            }
+        } else {
+            playerView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN);
+        }
     }
 
     public static String getFileName(Context context, Uri uri) {
@@ -124,17 +152,22 @@ class Utils {
         final int volumeMax = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
         boolean volumeActive = volume != 0;
 
+        PlayerControllerBridge bridge = playerView != null ? playerView.getControllerBridge() : null;
+        int boostLevel = bridge != null ? bridge.getBoostLevel() : 0;
+        LoudnessEnhancer loudnessEnhancer = bridge != null ? bridge.getLoudnessEnhancer() : null;
+
         // Handle volume changes outside the app (lose boost if volume is not maxed out)
         if (volume != volumeMax) {
-            PlayerActivity.boostLevel = 0;
+            boostLevel = 0;
+            if (bridge != null) bridge.setBoostLevel(0);
         }
 
-        if (PlayerActivity.loudnessEnhancer == null)
+        if (loudnessEnhancer == null)
             canBoost = false;
 
-        if (volume != volumeMax || (PlayerActivity.boostLevel == 0 && !raise)) {
-            if (PlayerActivity.loudnessEnhancer != null)
-                PlayerActivity.loudnessEnhancer.setEnabled(false);
+        if (volume != volumeMax || (boostLevel == 0 && !raise)) {
+            if (loudnessEnhancer != null)
+                loudnessEnhancer.setEnabled(false);
             audioManager.adjustStreamVolume(AudioManager.STREAM_MUSIC, raise ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER, AudioManager.FLAG_REMOVE_SOUND_AND_VIBRATE);
             final int volumeNew = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
             if (raise && volume == volumeNew && !isVolumeMin(audioManager)) {
@@ -144,25 +177,27 @@ class Utils {
                 playerView.setCustomErrorMessage(volumeActive ? " " + volumeNew : "");
             }
         } else {
-            if (canBoost && raise && PlayerActivity.boostLevel < 10)
-                PlayerActivity.boostLevel++;
-            else if (!raise && PlayerActivity.boostLevel > 0)
-                PlayerActivity.boostLevel--;
+            if (canBoost && raise && boostLevel < 10)
+                boostLevel++;
+            else if (!raise && boostLevel > 0)
+                boostLevel--;
 
-            if (PlayerActivity.loudnessEnhancer != null) {
+            if (bridge != null) bridge.setBoostLevel(boostLevel);
+
+            if (loudnessEnhancer != null) {
                 try {
-                    PlayerActivity.loudnessEnhancer.setTargetGain(PlayerActivity.boostLevel * 200);
+                    loudnessEnhancer.setTargetGain(boostLevel * 200);
                 } catch (RuntimeException e) {
                     e.printStackTrace();
                 }
             }
-            playerView.setCustomErrorMessage(" " + (volumeMax + PlayerActivity.boostLevel));
+            playerView.setCustomErrorMessage(" " + (volumeMax + boostLevel));
         }
 
         playerView.setIconVolume(volumeActive);
-        if (PlayerActivity.loudnessEnhancer != null)
-            PlayerActivity.loudnessEnhancer.setEnabled(PlayerActivity.boostLevel > 0);
-        playerView.setHighlight(PlayerActivity.boostLevel > 0);
+        if (loudnessEnhancer != null)
+            loudnessEnhancer.setEnabled(boostLevel > 0);
+        playerView.setHighlight(boostLevel > 0);
     }
 
     public static void setButtonEnabled(final Context context, final ImageButton button, final boolean enabled) {
@@ -224,11 +259,14 @@ class Utils {
     public static void setOrientation(Activity activity, Orientation orientation) {
         switch (orientation) {
             case VIDEO:
-                if (PlayerActivity.player != null) {
-                    final Format format = PlayerActivity.player.getVideoFormat();
-                    if (format != null) {
-                        applyOrientation(activity, isPortrait(format));
-                        break;
+                if (activity instanceof PlayerControllerBridge) {
+                    PlayerControllerBridge bridge = (PlayerControllerBridge) activity;
+                    if (bridge.getPlayer() != null) {
+                        final Format format = bridge.getPlayer().getVideoFormat();
+                        if (format != null) {
+                            applyOrientation(activity, isPortrait(format));
+                            break;
+                        }
                     }
                 }
                 break;
@@ -457,7 +495,7 @@ class Utils {
 
                             activity.mPrefs.updateSubtitle(uri);
                         }
-                        PlayerActivity.focusPlay = true;
+                        activity.setFocusPlay(true);
                         activity.initializePlayer();
                     }
                 })

@@ -1,6 +1,6 @@
 package com.brouken.player;
 
-import com.google.android.exoplayer2.text.Cue;
+import androidx.media3.common.text.Cue;
 import org.junit.Test;
 import java.util.Arrays;
 import java.util.Collections;

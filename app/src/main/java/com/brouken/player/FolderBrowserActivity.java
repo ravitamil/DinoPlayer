@@ -7,18 +7,16 @@ import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Parcelable;
 import android.provider.MediaStore;
-import android.provider.Settings;
 import android.text.format.Formatter;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
-import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.CheckBox;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -29,17 +27,25 @@ import androidx.appcompat.widget.SearchView;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import com.google.android.material.bottomsheet.BottomSheetDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.checkbox.MaterialCheckBox;
+import android.view.LayoutInflater;
+import android.widget.ImageView;
+import android.widget.ImageButton;
+import java.text.DateFormat;
+import java.util.Date;
+import java.util.Map;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 public class FolderBrowserActivity extends AppCompatActivity implements FolderBrowserAdapter.OnItemClickListener {
 
@@ -47,25 +53,79 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
     private static final int REQUEST_CODE_SETTINGS = 1002;
     private static final String PERMISSION_READ_MEDIA_VIDEO = "android.permission.READ_MEDIA_VIDEO";
 
-    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener captionListener=(p,k)-> {
-        this.mainHandler.removeCallbacks(this.refreshCaptionStates);this.mainHandler.postDelayed(this.refreshCaptionStates,200);
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener captionListener = (p, k) -> {
+        this.mainHandler.removeCallbacks(this.refreshCaptionStates);
+        this.mainHandler.postDelayed(this.refreshCaptionStates, 200);
     };
-    private final Runnable refreshCaptionStates=()-> { if(this.adapter!=null)this.adapter.refreshCaptionStates(); };
+    private final Runnable refreshCaptionStates = () -> {
+        if (this.adapter != null) this.adapter.refreshCaptionStates();
+    };
+
     private Prefs mPrefs;
     private Toolbar toolbar;
-    private TextView textBreadcrumb;
     private SwipeRefreshLayout swipeRefresh;
     private RecyclerView recyclerView;
     private View progressBar;
-    private TextView headerTitle;
-    private TextView headerSummary;
     private View layoutEmpty;
     private View layoutOnboarding;
 
     private FolderBrowserAdapter adapter;
+    private FolderBrowserViewModel mViewModel;
+
     private MediaScanner.VideoFolder mCurrentFolder = null;
     private final List<MediaScanner.VideoFolder> mLoadedFolders = new ArrayList<>();
-    private final List<FolderBrowserAdapter.BrowserItem> mCurrentVideoItems = new ArrayList<>();
+
+    private androidx.appcompat.view.ActionMode mActionMode;
+
+    private final androidx.appcompat.view.ActionMode.Callback mActionModeCallback = new androidx.appcompat.view.ActionMode.Callback() {
+        @Override
+        public boolean onCreateActionMode(androidx.appcompat.view.ActionMode mode, Menu menu) {
+            menu.add(Menu.NONE, 1000, Menu.NONE, R.string.action_play_selected)
+                    .setIcon(R.drawable.ic_play_arrow_24dp)
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+            menu.add(Menu.NONE, 1001, Menu.NONE, R.string.action_select_all)
+                    .setIcon(R.drawable.ic_select_all_24dp)
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+            menu.add(Menu.NONE, 1002, Menu.NONE, R.string.action_delete_selected)
+                    .setIcon(R.drawable.ic_delete_24dp_)
+                    .setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS);
+            return true;
+        }
+
+        @Override
+        public boolean onPrepareActionMode(androidx.appcompat.view.ActionMode mode, Menu menu) {
+            MenuItem selectAll = menu.findItem(1001);
+            if (selectAll != null) {
+                boolean allSelected = adapter.areAllVideosSelected();
+                selectAll.setTitle(allSelected ? R.string.action_deselect_all : R.string.action_select_all);
+                selectAll.setIcon(allSelected ? R.drawable.ic_close_24dp : R.drawable.ic_select_all_24dp);
+            }
+            return true;
+        }
+
+        @Override
+        public boolean onActionItemClicked(androidx.appcompat.view.ActionMode mode, MenuItem item) {
+            if (item.getItemId() == 1000) {
+                playSelectedVideos();
+                return true;
+            } else if (item.getItemId() == 1001) {
+                adapter.toggleSelectAllVideos();
+                mode.invalidate();
+                return true;
+            } else if (item.getItemId() == 1002) {
+                confirmDeleteSelectedVideos();
+                return true;
+            }
+            return false;
+        }
+
+
+        @Override
+        public void onDestroyActionMode(androidx.appcompat.view.ActionMode mode) {
+            mActionMode = null;
+            adapter.setSelectionMode(false);
+        }
+    };
 
     private MenuItem mSearchMenuItem;
     private SearchView mSearchView;
@@ -75,8 +135,6 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private ContentObserver mMediaStoreObserver;
-    private Future<?> mScanTask;
-    private int mScanGeneration;
     private String mRestoreFolderId;
     private Parcelable mRestoreScroll;
     private Parcelable mLibraryScroll;
@@ -114,61 +172,242 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
     @Override
     protected void onResume() {
         super.onResume();
-        getSharedPreferences("caption_work",0).registerOnSharedPreferenceChangeListener(captionListener);
+        getSharedPreferences("caption_work", 0).registerOnSharedPreferenceChangeListener(captionListener);
         registerMediaStoreObserver();
         mPrefs = new Prefs(this);
         if (hasStoragePermission()) {
             adapter.refreshHistory();
-            if (mScanTask == null) refreshCurrent(false);
+            mViewModel.refreshWatchHistory();
+            if (mLoadedFolders.isEmpty()) {
+                refreshCurrent(false);
+            }
         }
     }
 
-    @Override protected void onPause() {
+    @Override
+    protected void onPause() {
         unregisterMediaStoreObserver();
-        getSharedPreferences("caption_work",0).unregisterOnSharedPreferenceChangeListener(captionListener);
-        mainHandler.removeCallbacks(refreshCaptionStates);super.onPause();
+        getSharedPreferences("caption_work", 0).unregisterOnSharedPreferenceChangeListener(captionListener);
+        mainHandler.removeCallbacks(refreshCaptionStates);
+        super.onPause();
     }
 
-    @Override public void onVideoActions(FolderBrowserAdapter.BrowserItem item) {
-        java.util.List<String> labels=new ArrayList<>();java.util.List<Runnable> actions=new ArrayList<>();
-        CaptionWorkStore.Entry state=new CaptionWorkStore(this).read(item.uri,CaptionPackages.get(this).selected());
-        boolean busy=state!=null && (state.status==CaptionWorkStore.Status.GENERATING || state.status==CaptionWorkStore.Status.QUEUED);
-        if(busy) {
-            labels.add("Cancel subtitle generation");actions.add(()->executorService.execute(()-> {
-                CaptionAutoJobs.removeQueued(this,item.uri,null);
-                try { SubtitleGenerator.cancelAndAwait(item.uri);
-                    CaptionWorkStore store=new CaptionWorkStore(this);
-                    for(CaptionPack pack:CaptionPack.ALL) { CaptionWorkStore.Entry current=store.read(item.uri,pack);
-                        if(current!=null && current.status==CaptionWorkStore.Status.QUEUED)store.update(item.uri,pack,current.token,CaptionWorkStore.Status.CANCELLED,0,""); }
-                }catch(Exception e) { mainHandler.post(()->Toast.makeText(this,e.getMessage(),Toast.LENGTH_LONG).show()); }
-            }));
+    @Override
+    public void onVideoActions(FolderBrowserAdapter.BrowserItem item) {
+        if (item == null) return;
+        BottomSheetDialog sheetDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_video_actions, null);
+        sheetDialog.setContentView(sheet);
+
+        TextView textTitle = sheet.findViewById(R.id.text_sheet_title);
+        TextView textSubtitle = sheet.findViewById(R.id.text_sheet_subtitle);
+        ImageView imageThumb = sheet.findViewById(R.id.image_sheet_thumbnail);
+
+        textTitle.setText(item.name);
+
+        StringBuilder meta = new StringBuilder();
+        if (item.duration > 0) {
+            meta.append(Utils.formatMilis(item.duration));
+        }
+        if (item.size > 0) {
+            if (meta.length() > 0) meta.append(" • ");
+            meta.append(Formatter.formatFileSize(this, item.size));
+        }
+        textSubtitle.setText(meta.toString());
+
+        if (item.uri != null) {
+            ThumbnailLoader.getInstance().load(this, item.uri, imageThumb, null, null, null, FolderBrowserAdapter.thumbnailVersion(item));
+        }
+
+        // Action: Play / Resume
+        View actionPlay = sheet.findViewById(R.id.action_play);
+        TextView textPlayTitle = sheet.findViewById(R.id.text_action_play_title);
+        TextView textPlaySubtitle = sheet.findViewById(R.id.text_action_play_subtitle);
+
+        WatchHistory watchHistory = new WatchHistory(this);
+        Map<String, WatchHistory.Entry> histMap = watchHistory.snapshot();
+        WatchHistory.Entry historyEntry = item.uri != null ? histMap.get(item.uri.toString()) : null;
+        if (historyEntry != null && historyEntry.position > 1000) {
+            textPlayTitle.setText("Resume playback");
+            textPlaySubtitle.setText("Continue from " + Utils.formatMilis(historyEntry.position));
         } else {
-            labels.add("Generate / retry subtitles");actions.add(()->generateFromList(item,false));
-            labels.add("Regenerate subtitles");actions.add(()->new AlertDialog.Builder(this).setMessage("Replace this video’s generated subtitles and saved edits after generation succeeds?")
-                    .setPositiveButton("Regenerate",(d,w)->generateFromList(item,true)).setNegativeButton(android.R.string.cancel,null).show());
-            labels.add("Edit / export subtitles");actions.add(()->startActivity(new Intent(this,SubtitleEditorActivity.class).setData(item.uri).putExtra("path",item.path)));
+            textPlayTitle.setText("Play video");
+            textPlaySubtitle.setText("Start playback in player");
         }
-        labels.add("Delete video");actions.add(()->confirmDelete(item));
-        new AlertDialog.Builder(this).setTitle(item.name).setItems(labels.toArray(new String[0]),(d,w)->actions.get(w).run()).show();
+        actionPlay.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            onVideoClick(item);
+        });
+
+        // Action: Share
+        View actionShare = sheet.findViewById(R.id.action_share);
+        actionShare.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            shareVideo(item);
+        });
+
+        // Action: Details
+        View actionDetails = sheet.findViewById(R.id.action_details);
+        actionDetails.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            showVideoDetailsSheet(item);
+        });
+
+        // Action: Subtitles & Captions
+        View actionSubtitles = sheet.findViewById(R.id.action_subtitles);
+        TextView textSubTitle = sheet.findViewById(R.id.text_action_subtitle_title);
+        TextView textSubSubtitle = sheet.findViewById(R.id.text_action_subtitle_subtitle);
+
+        CaptionWorkStore.Entry state = new CaptionWorkStore(this).read(item.uri, CaptionPackages.get(this).selected());
+        boolean busy = state != null && (state.status == CaptionWorkStore.Status.GENERATING || state.status == CaptionWorkStore.Status.QUEUED);
+        if (busy) {
+            textSubTitle.setText("Cancel subtitle generation");
+            textSubSubtitle.setText("Generation is currently in progress");
+            actionSubtitles.setOnClickListener(v -> {
+                sheetDialog.dismiss();
+                cancelSubtitleGeneration(item);
+            });
+        } else {
+            actionSubtitles.setOnClickListener(v -> {
+                sheetDialog.dismiss();
+                showSubtitleOptions(item);
+            });
+        }
+
+        // Action: Reset watch progress
+        View actionResetProgress = sheet.findViewById(R.id.action_reset_progress);
+        if (historyEntry != null && historyEntry.position > 0) {
+            actionResetProgress.setVisibility(View.VISIBLE);
+            actionResetProgress.setOnClickListener(v -> {
+                sheetDialog.dismiss();
+                watchHistory.forget(item.uri);
+                adapter.refreshHistory();
+                Toast.makeText(this, "Watch progress cleared", Toast.LENGTH_SHORT).show();
+            });
+        } else {
+            actionResetProgress.setVisibility(View.GONE);
+        }
+
+        // Action: Delete
+        View actionDelete = sheet.findViewById(R.id.action_delete);
+        actionDelete.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            confirmDelete(item);
+        });
+
+        sheetDialog.show();
     }
-    private void generateFromList(FolderBrowserAdapter.BrowserItem item,boolean force) {
-        if(!CaptionPackages.get(this).isInstalled(CaptionPackages.get(this).selected())) {
-            new AlertDialog.Builder(this).setMessage("Install the selected offline subtitle pack in Settings first.")
-                    .setPositiveButton("Settings",(d,w)->openSettings()).setNegativeButton(android.R.string.cancel,null).show();return;
+
+    private void shareVideo(FolderBrowserAdapter.BrowserItem item) {
+        if (item == null || item.uri == null) return;
+        try {
+            Intent intent = new Intent(Intent.ACTION_SEND);
+            intent.setType("video/*");
+            intent.putExtra(Intent.EXTRA_STREAM, item.uri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(intent, "Share " + item.name));
+        } catch (Exception e) {
+            Toast.makeText(this, "Unable to share video", Toast.LENGTH_SHORT).show();
         }
-        // Watching this video streams captions as they arrive and provides a direct Cancel action.
-        Intent intent=new Intent(this,PlayerActivity.class).setDataAndType(item.uri,"video/*").putExtra("caption_request",force?"regenerate":"generate");
+    }
+
+    private void showVideoDetailsSheet(FolderBrowserAdapter.BrowserItem item) {
+        BottomSheetDialog detailsDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_video_details, null);
+        detailsDialog.setContentView(sheet);
+
+        TextView textName = sheet.findViewById(R.id.text_detail_name);
+        TextView textPath = sheet.findViewById(R.id.text_detail_path);
+        TextView textSize = sheet.findViewById(R.id.text_detail_size);
+        TextView textDuration = sheet.findViewById(R.id.text_detail_duration);
+        TextView textResolution = sheet.findViewById(R.id.text_detail_resolution);
+        TextView textDate = sheet.findViewById(R.id.text_detail_date);
+        ImageButton buttonClose = sheet.findViewById(R.id.button_details_close);
+
+        textName.setText(item.name);
+        textPath.setText(item.path != null ? item.path : (item.uri != null ? item.uri.toString() : "Unknown"));
+        textSize.setText(Formatter.formatFileSize(this, item.size));
+        textDuration.setText(item.duration > 0 ? Utils.formatMilis(item.duration) : "--:--");
+        textResolution.setText("Video");
+        if (item.lastModified > 0) {
+            textDate.setText(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(new Date(item.lastModified)));
+        } else {
+            textDate.setText("--");
+        }
+
+        buttonClose.setOnClickListener(v -> detailsDialog.dismiss());
+        detailsDialog.show();
+    }
+
+    private void showSubtitleOptions(FolderBrowserAdapter.BrowserItem item) {
+        String[] options = new String[]{
+                "Generate on-device subtitles",
+                "Regenerate subtitles (overwrite)",
+                "Edit / export subtitles"
+        };
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Subtitles & Captions")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        generateFromList(item, false);
+                    } else if (which == 1) {
+                        new MaterialAlertDialogBuilder(this)
+                                .setTitle("Regenerate Subtitles")
+                                .setMessage("Replace this video’s generated subtitles and saved edits?")
+                                .setPositiveButton("Regenerate", (d, w) -> generateFromList(item, true))
+                                .setNegativeButton(android.R.string.cancel, null)
+                                .show();
+                    } else if (which == 2) {
+                        startActivity(new Intent(this, SubtitleEditorActivity.class)
+                                .setData(item.uri)
+                                .putExtra("path", item.path));
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    private void cancelSubtitleGeneration(FolderBrowserAdapter.BrowserItem item) {
+        executorService.execute(() -> {
+            CaptionAutoJobs.removeQueued(this, item.uri, null);
+            try {
+                SubtitleGenerator.cancelAndAwait(item.uri);
+                CaptionWorkStore store = new CaptionWorkStore(this);
+                for (CaptionPack pack : CaptionPack.ALL) {
+                    CaptionWorkStore.Entry current = store.read(item.uri, pack);
+                    if (current != null && current.status == CaptionWorkStore.Status.QUEUED)
+                        store.update(item.uri, pack, current.token, CaptionWorkStore.Status.CANCELLED, 0, "");
+                }
+            } catch (Exception e) {
+                mainHandler.post(() -> Toast.makeText(this, e.getMessage(), Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
+    private void generateFromList(FolderBrowserAdapter.BrowserItem item, boolean force) {
+        if (!CaptionPackages.get(this).isInstalled(CaptionPackages.get(this).selected())) {
+            new MaterialAlertDialogBuilder(this).setMessage("Install the selected offline subtitle pack in Settings first.")
+                    .setPositiveButton("Settings", (d, w) -> openSettings()).setNegativeButton(android.R.string.cancel, null).show();
+            return;
+        }
+        Intent intent = new Intent(this, PlayerActivity.class).setDataAndType(item.uri, "video/*").putExtra("caption_request", force ? "regenerate" : "generate");
         startActivity(intent);
     }
+
     private void confirmDelete(FolderBrowserAdapter.BrowserItem item) {
-        android.widget.CheckBox include=new android.widget.CheckBox(this);include.setTextSize(14);
-        include.setText("Also delete DinoPlayer’s generated subtitles and saved edits");include.setChecked(true);
-        new AlertDialog.Builder(this).setTitle("Delete video permanently?")
-                .setMessage(item.name+"\n\nSubtitle generation will stop before deletion. Separate SRT/VTT files next to the video and exported copies are kept.")
-                .setView(include).setPositiveButton("Delete",(d,w)-> {
-                    cancelPendingScan();
-                    startActivityForResult(new Intent(this,VideoDeletionActivity.class).setData(item.uri).putExtra("path",item.path).putExtra("captions",include.isChecked()),4100);
-                }).setNegativeButton(android.R.string.cancel,null).show();
+        MaterialCheckBox include = new MaterialCheckBox(this);
+        include.setTextSize(14);
+        include.setText("Also delete DinoPlayer’s generated subtitles and saved edits");
+        include.setChecked(true);
+        int pad = Utils.dpToPx(20);
+        include.setPadding(pad, pad / 2, pad, pad / 2);
+
+        new MaterialAlertDialogBuilder(this).setTitle("Delete video permanently?")
+                .setMessage(item.name + "\n\nSubtitle generation will stop before deletion. Separate SRT/VTT files next to the video and exported copies are kept.")
+                .setView(include).setPositiveButton("Delete", (d, w) -> {
+                    mViewModel.cancelScan();
+                    startActivityForResult(new Intent(this, VideoDeletionActivity.class).setData(item.uri).putExtra("path", item.path).putExtra("captions", include.isChecked()), 4100);
+                }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
     private void initViews() {
@@ -176,9 +415,6 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
         setSupportActionBar(toolbar);
         toolbar.setNavigationOnClickListener(v -> onBackPressed());
 
-        textBreadcrumb = findViewById(R.id.text_breadcrumb);
-        headerTitle = findViewById(R.id.library_header_title);
-        headerSummary = findViewById(R.id.library_header_summary);
         swipeRefresh = findViewById(R.id.swipe_refresh);
         recyclerView = findViewById(R.id.recycler_view);
         progressBar = findViewById(R.id.progress_bar);
@@ -188,13 +424,91 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
         adapter = new FolderBrowserAdapter(this, this);
         recyclerView.setAdapter(adapter);
+        adapter.setSelectionListener(count -> {
+            if (mActionMode != null) {
+                if (count == 0) {
+                    mActionMode.finish();
+                } else {
+                    mActionMode.setTitle(getString(R.string.selected_count, count));
+                    mActionMode.invalidate();
+                }
+            }
+        });
+
+        mViewModel = new ViewModelProvider(this).get(FolderBrowserViewModel.class);
+
+        mViewModel.getDisplayedItems().observe(this, items -> {
+            adapter.setHistoryScope(items);
+            adapter.setItems(items);
+            if (mRestoreScroll != null && recyclerView.getLayoutManager() != null) {
+                recyclerView.getLayoutManager().onRestoreInstanceState(mRestoreScroll);
+                mRestoreScroll = null;
+            }
+        });
+
+        mViewModel.getIsLoading().observe(this, loading -> {
+            progressBar.setVisibility(loading ? View.VISIBLE : View.GONE);
+        });
+
+        mViewModel.getIsSwipeRefreshing().observe(this, refreshing -> {
+            swipeRefresh.setRefreshing(refreshing);
+        });
+
+        mViewModel.getIsEmpty().observe(this, empty -> {
+            layoutEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+            recyclerView.setVisibility(empty ? View.GONE : View.VISIBLE);
+        });
+
+        mViewModel.getEmptyTitle().observe(this, title -> {
+            if (title != null) {
+                TextView t = findViewById(R.id.text_empty_title);
+                if (t != null) t.setText(title);
+            }
+        });
+
+        mViewModel.getEmptyHint().observe(this, hint -> {
+            if (hint != null) {
+                TextView d = findViewById(R.id.text_empty_desc);
+                if (d != null) d.setText(hint);
+            }
+        });
+
+        mViewModel.getCurrentFolder().observe(this, folder -> {
+            mCurrentFolder = folder;
+            if (folder != null) {
+                updateToolbarFolder(folder);
+            } else {
+                List<MediaScanner.VideoFolder> list = mViewModel.getFolders().getValue();
+                updateToolbarRoot(list != null ? list.size() : 0, countTotalVideos(list));
+            }
+        });
+
+        mViewModel.getFolders().observe(this, folders -> {
+            mLoadedFolders.clear();
+            if (folders != null) mLoadedFolders.addAll(folders);
+            if (mViewModel.getCurrentFolder().getValue() == null) {
+                updateToolbarRoot(mLoadedFolders.size(), countTotalVideos(mLoadedFolders));
+            }
+        });
+
+        mViewModel.getWatchHistory().observe(this, history -> {
+            adapter.refreshHistory();
+        });
 
         swipeRefresh.setColorSchemeResources(R.color.green);
-        // Fixed: Swipe-to-refresh only shows its own spinner, NOT the center progressBar!
         swipeRefresh.setOnRefreshListener(() -> refreshCurrent(true));
 
         findViewById(R.id.button_select_folder).setOnClickListener(v -> requestStoragePermissions());
         findViewById(R.id.button_empty_change_folder).setOnClickListener(v -> openSettings());
+    }
+
+    private int countTotalVideos(List<MediaScanner.VideoFolder> folders) {
+        if (folders == null) return 0;
+        int total = 0;
+        for (MediaScanner.VideoFolder f : folders) {
+            total += f.getVideoCount();
+        }
+        return total;
     }
 
     private boolean hasStoragePermission() {
@@ -257,7 +571,11 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if(requestCode==4100 && resultCode==RESULT_OK) { cancelPendingScan();refreshCurrent(false);return; }
+        if (requestCode == 4100 && resultCode == RESULT_OK) {
+            mViewModel.cancelScan();
+            refreshCurrent(false);
+            return;
+        }
         if (requestCode == REQUEST_CODE_SETTINGS) {
             mPrefs = new Prefs(this);
             refreshCurrent(false);
@@ -265,255 +583,68 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
     }
 
     private void loadRootFolders(boolean isSwipeRefresh) {
-        mCurrentFolder = null;
-        scanLibrary(isSwipeRefresh);
+        mViewModel.scanLibrary(mPrefs, isSwipeRefresh, mRestoreFolderId);
+        mRestoreFolderId = null;
     }
 
-    private void scanLibrary(boolean isSwipeRefresh) {
-        if (isDestroyed() || executorService.isShutdown()) return;
-        int request = ++mScanGeneration;
-        if (mScanTask != null) mScanTask.cancel(true);
-        String folderId = mCurrentFolder != null ? mCurrentFolder.id : mRestoreFolderId;
-        Prefs scanPrefs = new Prefs(this);
-        if (!isSwipeRefresh && adapter.getItemCount() == 0) progressBar.setVisibility(View.VISIBLE);
-        layoutEmpty.setVisibility(View.GONE);
-        layoutOnboarding.setVisibility(View.GONE);
-        mScanTask = executorService.submit(() -> {
-            try {
-                MediaScanner.ScanResult result = MediaScanner.scan(getApplicationContext(), scanPrefs);
-                CaptionAutoJobs.observe(getApplicationContext(),result.displayedFolders);
-                new CaptionWorkStore(getApplicationContext()).reconcileReady();
-                mainHandler.post(() -> {
-                    if (request != mScanGeneration || isFinishing() || isDestroyed()) return;
-                    mScanTask = null;
-                    progressBar.setVisibility(View.GONE);
-                    swipeRefresh.setRefreshing(false);
-                    mLoadedFolders.clear();
-                    mLoadedFolders.addAll(result.displayedFolders);
-                    MediaScanner.VideoFolder selected = null;
-                    for (MediaScanner.VideoFolder folder : mLoadedFolders) {
-                        if (folder.id.equals(folderId)) { selected = folder; break; }
-                    }
-                    if (selected != null) showFolder(selected, false);
-                    else { mCurrentFolder = null; restoreCurrentItems(); }
-                    if (!mRestoreQuery.isEmpty() && mSearchMenuItem != null) {
-                        mSearchMenuItem.expandActionView();
-                        mSearchView.setQuery(mRestoreQuery, false);
-                        mRestoreQuery = "";
-                    } else if (mIsSearching) filterItems(mCurrentSearchQuery);
-                    if (mRestoreScroll != null && recyclerView.getLayoutManager() != null) {
-                        recyclerView.getLayoutManager().onRestoreInstanceState(mRestoreScroll);
-                        mRestoreScroll = null;
-                    }
-                    mRestoreFolderId = null;
-                });
-            } catch (RuntimeException error) {
-                mainHandler.post(() -> {
-                    if (request != mScanGeneration || isFinishing() || isDestroyed()) return;
-                    mScanTask = null;
-                    progressBar.setVisibility(View.GONE);
-                    swipeRefresh.setRefreshing(false);
-                    showEmptyView(true, getString(R.string.library_scan_failed), getString(R.string.library_scan_retry));
-                });
-            }
-        });
+    private void refreshCurrent(boolean isSwipeRefresh) {
+        mViewModel.scanLibrary(mPrefs, isSwipeRefresh, null);
     }
 
     private void openFolder(MediaScanner.VideoFolder folder) {
-        cancelPendingScan();
+        if (mActionMode != null) {
+            mActionMode.finish();
+        }
         RecyclerView.LayoutManager layout = recyclerView.getLayoutManager();
         if (mCurrentFolder == null && layout != null) {
             mLibraryScroll = layout.onSaveInstanceState();
         }
         recyclerView.stopScroll();
-        showFolder(folder, true);
+        mViewModel.openFolder(folder, mPrefs.sortMode);
         if (layout instanceof LinearLayoutManager) {
             ((LinearLayoutManager) layout).scrollToPositionWithOffset(0, 0);
         }
     }
 
-    private void cancelPendingScan() {
-        if (mScanTask != null) {
-            mScanGeneration++;
-            mScanTask.cancel(true);
-            mScanTask = null;
-        }
-        progressBar.setVisibility(View.GONE);
-        swipeRefresh.setRefreshing(false);
-    }
-
-    private void showFolder(MediaScanner.VideoFolder folder, boolean resetSearch) {
-        if (resetSearch && mSearchMenuItem != null && mSearchMenuItem.isActionViewExpanded()) {
-            mSearchMenuItem.collapseActionView();
-        }
-        mCurrentFolder = folder;
-        updateToolbarFolder(folder);
-        if (mSearchView != null) {
-            mSearchView.setQueryHint(getString(R.string.search_hint_videos));
-        }
-
-        List<FolderBrowserAdapter.BrowserItem> videoItems = new ArrayList<>();
-        long totalSize = 0;
-        for (MediaScanner.VideoItem video : folder.videos) {
-            totalSize += video.size;
-            videoItems.add(new FolderBrowserAdapter.BrowserItem(
-                    FolderBrowserAdapter.BrowserItem.TYPE_VIDEO,
-                    video.uri,
-                    video.name,
-                    video.path,
-                    video.size,
-                    video.dateAdded,
-                    video.duration,
-                    video.isHidden,
-                    0,
-                    null
-            ));
-        }
-
-        sortVideoItems(videoItems, mPrefs.sortMode);
-
-        mCurrentVideoItems.clear();
-        mCurrentVideoItems.addAll(videoItems);
-
-        adapter.setHistoryScope(mCurrentVideoItems);
-        adapter.setItems(mCurrentVideoItems);
-
-        if (mCurrentVideoItems.isEmpty()) {
-            showEmptyView(true, getString(R.string.no_videos_found), getString(R.string.no_videos_hint));
-        } else {
-            showEmptyView(false, null, null);
-            String sizeStr = Formatter.formatFileSize(this, totalSize);
-            toolbar.setSubtitle(mCurrentVideoItems.size() + (mCurrentVideoItems.size() == 1 ? " video" : " videos") + " • " + sizeStr);
-        }
-    }
-
     private void filterItems(String query) {
-        mCurrentSearchQuery = (query != null ? query.trim().toLowerCase(Locale.ROOT) : "");
-        if (mCurrentSearchQuery.isEmpty()) {
-            restoreCurrentItems();
-            return;
+        if (mActionMode != null) {
+            mActionMode.finish();
         }
-
-        if (mCurrentFolder != null) {
-            List<FolderBrowserAdapter.BrowserItem> filtered = new ArrayList<>();
-            for (FolderBrowserAdapter.BrowserItem item : mCurrentVideoItems) {
-                if (item.name != null && item.name.toLowerCase(Locale.ROOT).contains(mCurrentSearchQuery)) {
-                    filtered.add(item);
-                }
-            }
-            adapter.setItems(filtered);
-            if (filtered.isEmpty()) {
-                showEmptyView(true, getString(R.string.no_search_results), getString(R.string.no_search_results_hint));
-            } else {
-                showEmptyView(false, null, null);
-            }
-        } else {
-            List<FolderBrowserAdapter.BrowserItem> filtered = new ArrayList<>();
-
-            // 1. Folders matching the query
-            for (MediaScanner.VideoFolder folder : mLoadedFolders) {
-                if (folder.name != null && folder.name.toLowerCase(Locale.ROOT).contains(mCurrentSearchQuery)) {
-                    filtered.add(new FolderBrowserAdapter.BrowserItem(
-                            FolderBrowserAdapter.BrowserItem.TYPE_FOLDER,
-                            folder.posterUri,
-                            folder.name,
-                            folder.path,
-                            0, 0, 0,
-                            folder.isHidden,
-                            folder.getVideoCount(),
-                            folder
-                    ));
-                }
-            }
-
-            // 2. Videos across all loaded folders matching the query
-            for (MediaScanner.VideoFolder folder : mLoadedFolders) {
-                for (MediaScanner.VideoItem video : folder.videos) {
-                    if (video.name != null && video.name.toLowerCase(Locale.ROOT).contains(mCurrentSearchQuery)) {
-                        filtered.add(new FolderBrowserAdapter.BrowserItem(
-                                FolderBrowserAdapter.BrowserItem.TYPE_VIDEO,
-                                video.uri,
-                                video.name,
-                                video.path,
-                                video.size,
-                                video.dateAdded,
-                                video.duration,
-                                video.isHidden,
-                                0,
-                                null
-                        ));
-                    }
-                }
-            }
-
-            adapter.setItems(filtered);
-            if (filtered.isEmpty()) {
-                showEmptyView(true, getString(R.string.no_search_results), getString(R.string.no_search_results_hint));
-            } else {
-                showEmptyView(false, null, null);
-            }
-        }
-    }
-
-    private void restoreCurrentItems() {
-        if (mCurrentFolder != null) {
-            adapter.setItems(mCurrentVideoItems);
-            if (mCurrentVideoItems.isEmpty()) {
-                showEmptyView(true, getString(R.string.no_videos_found), getString(R.string.no_videos_hint));
-            } else {
-                showEmptyView(false, null, null);
-            }
-        } else {
-            List<FolderBrowserAdapter.BrowserItem> folderItems = new ArrayList<>();
-            int totalVideos = 0;
-            for (MediaScanner.VideoFolder folder : mLoadedFolders) {
-                totalVideos += folder.getVideoCount();
-                folderItems.add(new FolderBrowserAdapter.BrowserItem(
-                        FolderBrowserAdapter.BrowserItem.TYPE_FOLDER,
-                        folder.posterUri,
-                        folder.name,
-                        folder.path,
-                        0, 0, 0,
-                        folder.isHidden,
-                        folder.getVideoCount(),
-                        folder
-                ));
-            }
-            adapter.setHistoryScope(null);
-            adapter.setItems(folderItems);
-            if (folderItems.isEmpty()) {
-                showEmptyView(true, getString(R.string.no_folders_found), getString(R.string.no_folders_hint));
-            } else {
-                showEmptyView(false, null, null);
-                updateToolbarRoot(mLoadedFolders.size(), totalVideos);
-            }
-        }
+        mCurrentSearchQuery = (query != null ? query.trim() : "");
+        mViewModel.setSearchQuery(mCurrentSearchQuery);
     }
 
     private void updateToolbarRoot(int folderCount, int videoCount) {
-        toolbar.setTitle(R.string.app_name);
-        headerTitle.setText(R.string.your_videos);
+        toolbar.setTitle(R.string.your_videos);
         toolbar.setNavigationIcon(null);
-        textBreadcrumb.setVisibility(View.GONE);
+        if (mSearchView != null) {
+            mSearchView.setQueryHint(getString(R.string.search_hint));
+        }
 
         StringBuilder sb = new StringBuilder();
         sb.append(folderCount).append(folderCount == 1 ? " folder" : " folders");
         sb.append(" • ");
         sb.append(videoCount).append(videoCount == 1 ? " video" : " videos");
-        toolbar.setSubtitle(null);
-        headerSummary.setText(sb.toString());
+        toolbar.setSubtitle(sb.length() > 0 ? sb.toString() : null);
     }
 
     private void updateToolbarFolder(MediaScanner.VideoFolder folder) {
-        toolbar.setTitle(R.string.app_name);
-        headerTitle.setText(folder.name);
-        headerSummary.setText(getString(R.string.library_private));
+        toolbar.setTitle(folder.name);
         toolbar.setNavigationIcon(R.drawable.ic_arrow_back_white_24dp);
-        textBreadcrumb.setVisibility(View.GONE);
-    }
+        if (mSearchView != null) {
+            mSearchView.setQueryHint(getString(R.string.search_hint_videos));
+        }
 
-    private void refreshCurrent(boolean isSwipeRefresh) {
-        scanLibrary(isSwipeRefresh);
+        if (folder.videos != null && !folder.videos.isEmpty()) {
+            long totalSize = 0;
+            for (MediaScanner.VideoItem video : folder.videos) {
+                totalSize += video.size;
+            }
+            String sizeStr = Formatter.formatFileSize(this, totalSize);
+            toolbar.setSubtitle(folder.videos.size() + (folder.videos.size() == 1 ? " video" : " videos") + " • " + sizeStr);
+        } else {
+            toolbar.setSubtitle(null);
+        }
     }
 
     @Override
@@ -533,32 +664,173 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
         layoutEmpty.setVisibility(View.GONE);
     }
 
-    private void showEmptyView(boolean show, String title, String hint) {
-        layoutEmpty.setVisibility(show ? View.VISIBLE : View.GONE);
-        recyclerView.setVisibility(show ? View.GONE : View.VISIBLE);
-        if (show) {
-            if (title != null) {
-                ((TextView) findViewById(R.id.text_empty_title)).setText(title);
+    private void playSelectedVideos() {
+        List<FolderBrowserAdapter.BrowserItem> selected = adapter.getSelectedItems();
+        if (selected.isEmpty()) return;
+        List<Uri> playlist = new ArrayList<>();
+        for (FolderBrowserAdapter.BrowserItem item : selected) {
+            Uri u = item.uri != null ? item.uri : (item.file != null ? item.file.getUri() : null);
+            if (u != null) playlist.add(u);
+        }
+        if (!playlist.isEmpty()) {
+            if (mActionMode != null) {
+                mActionMode.finish();
             }
-            if (hint != null) {
-                ((TextView) findViewById(R.id.text_empty_desc)).setText(hint);
+            PlaylistManager.setPlaylist(this, playlist, playlist.get(0));
+            Intent intent = new Intent(this, PlayerActivity.class);
+            intent.setDataAndType(playlist.get(0), "video/*");
+            if (selected.get(0).path != null) {
+                intent.putExtra("video_path", selected.get(0).path);
             }
-            TextView btn = findViewById(R.id.button_empty_change_folder);
-            if (btn != null) {
-                btn.setText("OPEN SETTINGS");
-            }
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(intent);
         }
     }
 
     @Override
     public void onFolderClick(FolderBrowserAdapter.BrowserItem folderItem) {
+        if (adapter.isSelectionMode()) {
+            if (mActionMode != null) {
+                mActionMode.finish();
+            }
+            return;
+        }
         if (folderItem != null && folderItem.folder != null) {
             openFolder(folderItem.folder);
         }
     }
 
     @Override
+    public void onFolderLongClick(FolderBrowserAdapter.BrowserItem folderItem) {
+        if (folderItem == null || folderItem.folder == null) return;
+        MediaScanner.VideoFolder folder = folderItem.folder;
+
+        BottomSheetDialog sheetDialog = new BottomSheetDialog(this, R.style.ThemeOverlay_App_BottomSheetDialog);
+        View sheet = LayoutInflater.from(this).inflate(R.layout.sheet_folder_actions, null);
+        sheetDialog.setContentView(sheet);
+
+        TextView textName = sheet.findViewById(R.id.text_folder_sheet_name);
+        TextView textInfo = sheet.findViewById(R.id.text_folder_sheet_info);
+        textName.setText(folder.name);
+        int videoCount = folder.getVideoCount();
+        textInfo.setText(videoCount + (videoCount == 1 ? " video" : " videos") + " • " + folder.path);
+
+        // Action: Play all
+        View actionPlayAll = sheet.findViewById(R.id.action_folder_play_all);
+        TextView textPlayTitle = sheet.findViewById(R.id.text_folder_action_play_title);
+        textPlayTitle.setText("Play all (" + videoCount + (videoCount == 1 ? " video" : " videos") + ")");
+        actionPlayAll.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            List<Uri> uris = new ArrayList<>();
+            for (MediaScanner.VideoItem vi : folder.videos) {
+                if (vi.uri != null) uris.add(vi.uri);
+            }
+            if (!uris.isEmpty()) {
+                PlaylistManager.setPlaylist(this, uris, uris.get(0));
+                Intent intent = new Intent(this, PlayerActivity.class);
+                intent.setDataAndType(uris.get(0), "video/*");
+                if (folder.videos.get(0).path != null) {
+                    intent.putExtra("video_path", folder.videos.get(0).path);
+                }
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                startActivity(intent);
+            }
+        });
+
+        // Action: Exclude
+        View actionExclude = sheet.findViewById(R.id.action_folder_exclude);
+        actionExclude.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Exclude Folder?")
+                    .setMessage("Hide \"" + folder.name + "\" and its videos from the player library?")
+                    .setPositiveButton("Exclude", (dialog, which) -> {
+                        java.util.Set<String> updated = new java.util.HashSet<>(mPrefs.excludedFolders);
+                        updated.add(folder.path);
+                        mPrefs.updateExcludedFolders(updated);
+                        Toast.makeText(this, "Folder excluded: " + folder.name, Toast.LENGTH_SHORT).show();
+                        refreshCurrent(false);
+                    })
+                    .setNegativeButton(android.R.string.cancel, null)
+                    .show();
+        });
+
+        // Action: Details
+        View actionDetails = sheet.findViewById(R.id.action_folder_details);
+        actionDetails.setOnClickListener(v -> {
+            sheetDialog.dismiss();
+            new MaterialAlertDialogBuilder(this)
+                    .setTitle("Folder Details")
+                    .setMessage("Name: " + folder.name + "\n\nPath: " + folder.path + "\n\nVideos: " + videoCount)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        });
+
+        sheetDialog.show();
+    }
+
+    @Override
+    public void onVideoLongClick(FolderBrowserAdapter.BrowserItem videoItem) {
+        if (videoItem == null) return;
+        Uri videoUri = videoItem.uri != null ? videoItem.uri : (videoItem.file != null ? videoItem.file.getUri() : null);
+        if (videoUri == null) return;
+
+        if (mActionMode == null) {
+            adapter.setSelectionMode(true);
+            adapter.toggleSelection(videoUri);
+            mActionMode = startSupportActionMode(mActionModeCallback);
+            if (mActionMode != null) {
+                mActionMode.setTitle(getString(R.string.selected_count, adapter.getSelectedCount()));
+            }
+        } else {
+            adapter.toggleSelection(videoUri);
+        }
+    }
+
+    private void confirmDeleteSelectedVideos() {
+        List<FolderBrowserAdapter.BrowserItem> selected = adapter.getSelectedItems();
+        if (selected.isEmpty()) return;
+
+        int count = selected.size();
+        MaterialCheckBox include = new MaterialCheckBox(this);
+        include.setText("Include associated subtitles");
+        include.setChecked(true);
+        int pad = Utils.dpToPx(20);
+        include.setPadding(pad, pad / 2, pad, pad / 2);
+
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(count == 1 ? "Delete video?" : ("Delete " + count + " videos?"))
+                .setMessage("Are you sure you want to permanently delete " + (count == 1 ? "this video" : (count + " videos")) + " from your device?")
+                .setView(include)
+                .setPositiveButton("Delete", (d, w) -> {
+                    if (mActionMode != null) {
+                        mActionMode.finish();
+                    }
+                    mViewModel.cancelScan();
+                    ArrayList<Uri> uris = new ArrayList<>();
+                    ArrayList<String> paths = new ArrayList<>();
+                    for (FolderBrowserAdapter.BrowserItem item : selected) {
+                        if (item.uri != null) uris.add(item.uri);
+                        if (item.path != null) paths.add(item.path);
+                    }
+                    Intent intent = new Intent(this, VideoDeletionActivity.class)
+                            .putParcelableArrayListExtra("uris", uris)
+                            .putStringArrayListExtra("paths", paths)
+                            .putExtra("captions", include.isChecked());
+                    startActivityForResult(intent, 4100);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    @Override
     public void onVideoClick(FolderBrowserAdapter.BrowserItem videoItem) {
+        if (adapter.isSelectionMode()) {
+            if (videoItem != null) {
+                adapter.toggleSelection(videoItem.uri);
+            }
+            return;
+        }
         if (videoItem != null && videoItem.uri != null) {
             List<Uri> playlist = new ArrayList<>();
             for (FolderBrowserAdapter.BrowserItem item : adapter.getItems()) {
@@ -580,15 +852,16 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
 
     @Override
     public void onBackPressed() {
+        if (mActionMode != null) {
+            mActionMode.finish();
+            return;
+        }
         if (mSearchMenuItem != null && mSearchMenuItem.isActionViewExpanded()) {
             mSearchMenuItem.collapseActionView();
             return;
         }
-        if (mCurrentFolder != null) {
+        if (mViewModel.navigateUp()) {
             recyclerView.stopScroll();
-            cancelPendingScan();
-            mCurrentFolder = null;
-            restoreCurrentItems();
             RecyclerView.LayoutManager layout = recyclerView.getLayoutManager();
             if (layout != null && mLibraryScroll != null) layout.onRestoreInstanceState(mLibraryScroll);
             else if (layout != null) layout.scrollToPosition(0);
@@ -625,6 +898,7 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
                 @Override
                 public boolean onMenuItemActionExpand(MenuItem item) {
                     mIsSearching = true;
+                    mViewModel.setIsSearching(true);
                     return true;
                 }
 
@@ -632,10 +906,16 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
                 public boolean onMenuItemActionCollapse(MenuItem item) {
                     mIsSearching = false;
                     mCurrentSearchQuery = "";
-                    restoreCurrentItems();
+                    mViewModel.setIsSearching(false);
                     return true;
                 }
             });
+
+            if (!mRestoreQuery.isEmpty()) {
+                mSearchMenuItem.expandActionView();
+                mSearchView.setQuery(mRestoreQuery, false);
+                mRestoreQuery = "";
+            }
         }
         return true;
     }
@@ -656,32 +936,6 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
         return super.onOptionsItemSelected(item);
     }
 
-    private void sortVideoItems(List<FolderBrowserAdapter.BrowserItem> videos, Prefs.SortMode sortMode) {
-        if (sortMode == null) {
-            sortMode = Prefs.SortMode.DATE_DESC;
-        }
-        switch (sortMode) {
-            case NAME_ASC:
-                Collections.sort(videos, (a, b) -> a.name.compareToIgnoreCase(b.name));
-                break;
-            case NAME_DESC:
-                Collections.sort(videos, (a, b) -> b.name.compareToIgnoreCase(a.name));
-                break;
-            case DATE_DESC:
-                Collections.sort(videos, (a, b) -> Long.compare(b.lastModified, a.lastModified));
-                break;
-            case DATE_ASC:
-                Collections.sort(videos, (a, b) -> Long.compare(a.lastModified, b.lastModified));
-                break;
-            case SIZE_DESC:
-                Collections.sort(videos, (a, b) -> Long.compare(b.size, a.size));
-                break;
-            case SIZE_ASC:
-                Collections.sort(videos, (a, b) -> Long.compare(a.size, b.size));
-                break;
-        }
-    }
-
     private void showSortDialog() {
         final Prefs.SortMode[] modes = Prefs.SortMode.values();
         CharSequence[] items = new CharSequence[modes.length];
@@ -693,15 +947,13 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
             }
         }
 
-        new AlertDialog.Builder(this)
+        new MaterialAlertDialogBuilder(this)
                 .setTitle(R.string.sort_by)
                 .setSingleChoiceItems(items, selected, (dialog, which) -> {
                     Prefs.SortMode chosen = modes[which];
                     mPrefs.updateSortMode(chosen);
+                    mViewModel.setSortMode(chosen);
                     dialog.dismiss();
-                    if (mCurrentFolder != null) {
-                        openFolder(mCurrentFolder);
-                    }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
@@ -742,9 +994,8 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
     protected void onDestroy() {
         super.onDestroy();
         unregisterMediaStoreObserver();
-        mScanGeneration++;
         mainHandler.removeCallbacksAndMessages(null);
-        if (mScanTask != null) mScanTask.cancel(true);
+        if (mViewModel != null) mViewModel.cancelScan();
         executorService.shutdownNow();
     }
 }

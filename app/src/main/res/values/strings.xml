@@ -4,7 +4,11 @@
     <string name="captions_progress_compact">Captions · %1$d%%</string>
     <string name="captions_waiting_compact">Captions catching up · %1$d%%</string>
     <string name="your_videos">Your videos</string>
-    <string name="library_private">On your device. Ready to play.</string>
+    <string name="action_select_all">Select all</string>
+    <string name="action_deselect_all">Deselect all</string>
+    <string name="action_play_selected">Play</string>
+    <string name="action_delete_selected">Delete</string>
+    <string name="selected_count">%1$d selected</string>
     <string name="captions_install_pack">Tap to install %1$s in Settings</string>
     <string name="captions_preparing_pack">Preparing %1$s offline…</string>
     <string name="captions_local_only">Offline captions need a video stored on this device</string>
@@ -19,7 +23,7 @@
     <string name="video_orientation_sensor">Auto-rotate</string>
 
     <string name="onboarding_open_title">Choose a video to play</string>
-    <string name="onboarding_open_description">Tap to open a video file. Long tap to load external subtitles.</string>
+    <string name="onboarding_open_description">Tap to play a video. Browse your library or choose from storage.</string>
 
     <string name="open_subtitles">Load subtitles</string>
 
@@ -53,8 +57,8 @@
     <string name="folder_filters">Folder Filters</string>
     <string name="excluded_folders">Excluded Folders</string>
     <string name="included_folders">Included Folders</string>
-    <string name="scan_all_folders">Scan all folders (except excluded)</string>
-    <string name="scan_only_included">Scan only included folders</string>
+    <string name="scan_all_folders">Scan all device folders</string>
+    <string name="scan_only_included">Library folders only</string>
     <string name="videos_folders">Video Folders</string>
     <string name="no_folders_found">No video folders found</string>
     <string name="no_folders_hint">No videos found. Check storage access or enable \"Show hidden folders\" in the menu.</string>
@@ -104,4 +108,11 @@
     <string name="subtitle_done">Done</string>
     <string-array name="subtitle_sizes"><item>Small</item><item>Medium</item><item>Large</item></string-array>
     <string-array name="subtitle_colors"><item>White</item><item>Yellow</item><item>Light green</item><item>Light blue</item></string-array>
+    <string name="no_next_video">No next video in playlist</string>
+    <string name="subtitles_off">Off</string>
+    <string name="embedded_subtitles">Embedded tracks</string>
+    <string name="external_subtitles">External subtitle</string>
+    <string name="ai_captions_title">Auto-generated captions</string>
+    <string name="subtitle_delay_title">Subtitle Timing Adjustment</string>
+    <string name="subtitle_delay_current">Delay: %1$d ms</string>
 </resources>
