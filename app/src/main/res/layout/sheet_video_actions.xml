@@ -136,6 +136,46 @@
         </LinearLayout>
     </LinearLayout>
 
+    <!-- Action: Cast to TV -->
+    <LinearLayout
+        android:id="@+id/action_cast"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingVertical="10dp"
+        android:paddingHorizontal="8dp">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:src="@drawable/ic_cast_24dp"
+            app:tint="@color/green" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Cast to TV"
+                android:textColor="@color/app_text"
+                android:textSize="15sp"
+                android:fontFamily="sans-serif-medium" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Wireless display, Smart View, or DLNA stream"
+                android:textColor="@color/app_text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+    </LinearLayout>
+
     <!-- Action: Share -->
     <LinearLayout
         android:id="@+id/action_share"

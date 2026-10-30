@@ -59,6 +59,10 @@
 - **Multitasking Mode:** Seamlessly transition to a resizable floating window when pressing Home or switching apps.
 - **Android 14+ Hardened:** Configured with modern `RECEIVER_NOT_EXPORTED` broadcast security and explicit intent routing for responsive background controls.
 
+### 📺 Wireless Casting & Smart TV Streaming
+- **One-Tap Screencast:** Instantly mirror playback to Samsung Smart View, LG webOS, Sony Bravia, Roku, Fire TV, and Android TV displays.
+- **DLNA & External Stream Support:** Cast direct video streams to Web Video Caster, BubbleUPnP, VLC, and local network receivers with hardware acceleration.
+
 ### 🔒 Privacy-First Scoped Storage
 - **Isolated Folder Scanning:** Strict scoping to dedicated folders (defaulting to `/storage/emulated/0/InstaPrime/Media Downloads`) rather than scanning entire storage without permission.
 - **No Telemetry or Ads:** Free and open source with zero analytics, tracking SDKs, or cloud dependencies.

@@ -210,6 +210,7 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
     private TextView aspectRatioPill;
     private TextView buttonSpeed;
     private ImageButton buttonSubtitle;
+    private ImageButton buttonCast;
     private ImageButton buttonLock;
     private ImageButton buttonUnlock;
     private ImageButton exoPrev;
@@ -536,6 +537,19 @@ public class PlayerActivity extends AppCompatActivity implements PlayerControlle
                 return true;
             });
             updateSubtitleButtonState(mPrefs.subtitleTrack >= 0 || mPrefs.subtitleUri != null);
+        }
+
+        buttonCast = findViewById(R.id.button_cast);
+        if (buttonCast != null) {
+            buttonCast.setOnClickListener(v -> {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                String videoTitle = (titleView != null && titleView.getText() != null)
+                        ? titleView.getText().toString()
+                        : (mPrefs != null && mPrefs.mediaUri != null ? Utils.getFileName(this, mPrefs.mediaUri) : "Current Video");
+                android.net.Uri videoUri = mPrefs != null ? mPrefs.mediaUri : null;
+                CastBottomSheetDialogFragment castSheet = CastBottomSheetDialogFragment.newInstance(videoUri, videoTitle);
+                castSheet.show(getSupportFragmentManager(), "CastBottomSheet");
+            });
         }
 
         buttonLock = findViewById(R.id.button_lock);

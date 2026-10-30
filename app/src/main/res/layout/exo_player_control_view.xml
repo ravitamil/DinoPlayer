@@ -74,6 +74,12 @@
             android:contentDescription="@string/subtitle_options" />
 
         <ImageButton
+            android:id="@+id/button_cast"
+            style="@style/PlayerAction"
+            android:src="@drawable/ic_cast_24dp"
+            android:contentDescription="Cast to TV" />
+
+        <ImageButton
             android:id="@+id/exo_settings"
             style="@style/PlayerAction"
             android:src="@drawable/ic_settings_24dp"

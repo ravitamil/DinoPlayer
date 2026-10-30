@@ -239,6 +239,16 @@ public class FolderBrowserActivity extends AppCompatActivity implements FolderBr
             onVideoClick(item);
         });
 
+        // Action: Cast to TV
+        View actionCast = sheet.findViewById(R.id.action_cast);
+        if (actionCast != null) {
+            actionCast.setOnClickListener(v -> {
+                sheetDialog.dismiss();
+                CastBottomSheetDialogFragment castSheet = CastBottomSheetDialogFragment.newInstance(item.uri, item.name);
+                castSheet.show(getSupportFragmentManager(), "CastBottomSheet");
+            });
+        }
+
         // Action: Share
         View actionShare = sheet.findViewById(R.id.action_share);
         actionShare.setOnClickListener(v -> {
